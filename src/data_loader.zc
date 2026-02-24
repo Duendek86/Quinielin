@@ -1,4 +1,4 @@
-import "std/libc.zc"
+import "std/core.zc"
 import "std/fs.zc"
 import "std/vec.zc"
 

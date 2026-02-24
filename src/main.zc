@@ -1,7 +1,7 @@
 //> include: ./src
 //> link: -lm
 
-import "std/libc.zc"
+import "std/core.zc"
 import "std/fs.zc"
 import "src/downloader.zc"
 
