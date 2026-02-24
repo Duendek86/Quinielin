@@ -1,0 +1,27 @@
+import "std/libc.zc"
+import "std/fs.zc"
+import "std/vec.zc"
+
+struct Match {
+    home_team: *char;
+    away_team: *char;
+    home_goals: int;
+    away_goals: int;
+    result: char; // 'H', 'D', 'A'
+}
+
+struct TeamStats {
+    name: *char;
+    played: int;
+    goals_for: int;
+    goals_against: int;
+    points: int;
+}
+
+fn parse_csv(filename: *char) -> Vec<Match> {
+    let matches = Vec<Match>::new();
+    // TODO: Implement CSV parsing logic
+    // We will read the file line by line and split by commas
+    printf("Procesando fichero: %s\n", filename);
+    return matches;
+}
