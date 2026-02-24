@@ -2,13 +2,19 @@
 //> link: -lm
 
 import "std/libc.zc"
+import "std/fs.zc"
 import "src/downloader.zc"
 
 fn main(argc: int, argv: **char) -> int {
     printf("Bienvenido a Quinielin - Generador de apuestas para La Liga\n");
     
-    if (argc > 1 && strcmp(argv[1], "--download") == 0) {
-        printf("Opción de descarga activada.\n");
+    // Comprobar si es necesario descargar datos por primera vez
+    if (!fs::exists("data") || fs::is_empty("data")) {
+        fs::mkdir("data");
+        printf("Detectada primera ejecución. Descargando base de datos histórica...\n");
+        download_all_data();
+    } else if (argc > 1 && strcmp(argv[1], "--download") == 0) {
+        printf("Actualizando última temporada...\n");
         download_season_data("https://datahub.io/core/spanish-la-liga/_r/-/season-2425.csv", "data/season-2425.csv");
         return 0;
     }
