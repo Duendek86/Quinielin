@@ -1,0 +1,22 @@
+import "std/libc.zc"
+import "std/net.zc"
+import "std/fs.zc"
+
+fn download_season_data(url: *char, destination: *char) -> bool {
+    printf("Descargando datos desde: %s\n", url);
+    
+    // In ZenC, networking is handled via the net module
+    // This is a placeholder for the actual implementation using std/net
+    /*
+    let client = HttpClient::new();
+    let response = client.get(url);
+    if (response.status == 200) {
+        fs::write_file(destination, response.body);
+        printf("Descarga completada: %s\n", destination);
+        return true;
+    }
+    */
+    
+    printf("Simulando descarga... (Implementación std/net requerida)\n");
+    return true;
+}

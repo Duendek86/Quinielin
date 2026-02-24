@@ -2,11 +2,18 @@
 //> link: -lm
 
 import "std/libc.zc"
+import "src/downloader.zc"
 
 fn main(argc: int, argv: **char) -> int {
     printf("Bienvenido a Quinielin - Generador de apuestas para La Liga\n");
-    printf("Cargando estadísticas...\n");
     
+    if (argc > 1 && strcmp(argv[1], "--download") == 0) {
+        printf("Opción de descarga activada.\n");
+        download_season_data("https://datahub.io/core/spanish-la-liga/_r/-/season-2425.csv", "data/season-2425.csv");
+        return 0;
+    }
+
+    printf("Cargando estadísticas...\n");
     // TODO: Implementar carga de datos y lógica de predicción
     
     return 0;
