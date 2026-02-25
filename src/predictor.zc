@@ -18,10 +18,10 @@ impl Prediction {
 }
 
 fn predict_match(home: TeamStats*, away: TeamStats*) -> Prediction {
-    let home_atk = (float)home.goals_for / (float)home.played;
-    let home_def = (float)home.goals_against / (float)home.played;
-    let away_atk = (float)away.goals_for / (float)away.played;
-    let away_def = (float)away.goals_against / (float)away.played;
+    let home_atk = home.goals_for / home.played;
+    let home_def = home.goals_against / home.played;
+    let away_atk = away.goals_for / away.played;
+    let away_def = away.goals_against / away.played;
     
     // Simplistic strength: atk / opponent_def
     let home_strength = home_atk + away_def;
@@ -30,7 +30,7 @@ fn predict_match(home: TeamStats*, away: TeamStats*) -> Prediction {
     // Add home advantage
     home_strength = home_strength + 0.3;
     
-    let total = home_strength + away_strength + 1.0; // 1.0 for draw weight
+    let total = home_strength + away_strength + 1.2; // 1.2 for draw weight
     
     let p1 = home_strength / total;
     let p2 = away_strength / total;
@@ -45,13 +45,38 @@ fn predict_match(home: TeamStats*, away: TeamStats*) -> Prediction {
         forecast: 'X'
     };
 
-    if (p1 > p2 && p1 > px) {
-        pred.forecast = '1';
-    } else if (p2 > p1 && p2 > px) {
-        pred.forecast = '2';
-    } else {
+    // Calculate difference between home and away probabilities
+    let diff = p1 - p2;
+    if (diff < 0.0) { diff = -diff; }
+    
+    // If probabilities are practically identical (less than 4% difference), predict a draw
+    if (diff < 0.04) {
         pred.forecast = 'X';
+    } else if (p1 > p2) {
+        pred.forecast = '1';
+    } else {
+        pred.forecast = '2';
     }
     
     return pred;
+}
+
+fn predict_goals(team: TeamStats*, opponent: TeamStats*, is_home: bool) -> char {
+    let atk = team.goals_for / team.played;
+    let defense = opponent.goals_against / opponent.played;
+    
+    // Promedio entre lo que el equipo marca y lo que el rival concede
+    let expected = (atk + defense) / 2.0;
+    
+    // Ligera ventaja local
+    if (is_home) {
+        expected = expected + 0.2;
+    } else {
+        expected = expected - 0.1;
+    }
+    
+    if (expected < 0.8) return '0';
+    if (expected < 1.6) return '1';
+    if (expected < 2.5) return '2';
+    return 'M';
 }

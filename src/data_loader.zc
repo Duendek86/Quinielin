@@ -1,6 +1,7 @@
 import "libs/std.zc"
 
 extern fn atoi(s: const char*) -> int;
+extern fn atof(s: const char*) -> double;
 
 struct FootballMatch {
     date: String;
@@ -21,20 +22,20 @@ impl FootballMatch {
 
 struct TeamStats {
     name: String;
-    played: int;
-    goals_for: int;
-    goals_against: int;
-    points: int;
+    played: float;
+    goals_for: float;
+    goals_against: float;
+    points: float;
 }
 
 impl TeamStats {
     fn new(name: String) -> TeamStats {
         return TeamStats {
             name: name,
-            played: 0,
-            goals_for: 0,
-            goals_against: 0,
-            points: 0
+            played: 0.0,
+            goals_for: 0.0,
+            goals_against: 0.0,
+            points: 0.0
         };
     }
     
@@ -48,7 +49,6 @@ fn parse_csv(filename: char*) -> Vec<FootballMatch> {
     
     let content_res = File::read_all(filename);
     if (content_res.is_err()) {
-        printf("Error leyendo fichero: %s\n", filename);
         return matches;
     }
     
@@ -89,11 +89,107 @@ struct TeamStatsRef {
     ptr: TeamStats*;
 }
 
-fn calculate_stats(matches: Vec<FootballMatch>) -> Map<TeamStatsRef> {
+extern fn strchr(s: const char*, c: int) -> char*;
+
+// Parse DD/MM/YYYY to YYYYMMDD int for easy comparison (zero allocations)
+fn parse_date_to_int(date_str: char*) -> int {
+    let d = atoi(date_str);
+    let ptr = strchr(date_str, '/');
+    if (ptr == NULL) return 0;
+    ptr = ptr + 1;
+    let m = atoi(ptr);
+    ptr = strchr(ptr, '/');
+    if (ptr == NULL) return 0;
+    ptr = ptr + 1;
+    let y = atoi(ptr);
+    
+    // Handle 2-digit years
+    if (y < 100) {
+        if (y > 50) { y = y + 1900; }
+        else { y = y + 2000; }
+    }
+    return y * 10000 + m * 100 + d;
+}
+
+struct PredictionWeights {
+    w_month: float;
+    w_quarter: float;
+    w_season: float;
+    w_history: float;
+}
+
+fn load_weights(filename: char*) -> PredictionWeights {
+    let weights = PredictionWeights {
+        w_month: 0.8,
+        w_quarter: 0.5,
+        w_season: 0.2,
+        w_history: 0.1
+    };
+    
+    let res = File::read_all(filename);
+    if (res.is_err()) {
+        printf("Usando pesos por defecto (no se encontró %s)\n", filename);
+        return weights;
+    }
+    
+    let content = res.unwrap();
+    let lines = content.split('\n');
+    
+    for (let i = 0; i < lines.len; i = i + 1) {
+        let line = lines.get(i).trim();
+        if (line.is_empty()) continue;
+        if (line.c_str()[0] == '#') continue;
+        
+        let parts = line.split('=');
+        if (parts.len >= 2) {
+            let key = parts.get(0).trim();
+            let val = parts.get(1).trim();
+            let fval = (float)atof(val.c_str());
+            
+            if (strcmp(key.c_str(), "w_month") == 0) { weights.w_month = fval; }
+            if (strcmp(key.c_str(), "w_quarter") == 0) { weights.w_quarter = fval; }
+            if (strcmp(key.c_str(), "w_season") == 0) { weights.w_season = fval; }
+            if (strcmp(key.c_str(), "w_history") == 0) { weights.w_history = fval; }
+        }
+    }
+    
+    content.free();
+    printf("Pesos cargados: mes=%.1f, trim=%.1f, temp=%.1f, hist=%.1f\n",
+           weights.w_month, weights.w_quarter, weights.w_season, weights.w_history);
+    return weights;
+}
+
+// Simple date difference approximation in days
+fn approx_days_between(date_int_a: int, date_int_b: int) -> int {
+    let ya = date_int_a / 10000;
+    let ma = (date_int_a % 10000) / 100;
+    let da = date_int_a % 100;
+    let yb = date_int_b / 10000;
+    let mb = (date_int_b % 10000) / 100;
+    let db = date_int_b % 100;
+    let days = (yb - ya) * 365 + (mb - ma) * 30 + (db - da);
+    if (days < 0) { days = -days; }
+    return days;
+}
+
+fn get_weight(days_ago: int, weights: PredictionWeights) -> float {
+    if (days_ago <= 30) return weights.w_month;
+    if (days_ago <= 90) return weights.w_quarter;
+    if (days_ago <= 365) return weights.w_season;
+    return weights.w_history;
+}
+
+fn calculate_stats(matches: Vec<FootballMatch>, weights: PredictionWeights, max_date: int) -> Map<TeamStatsRef> {
     let stats_map = Map<TeamStatsRef>::new();
     
     for (let i = 0; i < matches.len; i = i + 1) {
         let m = matches.get(i);
+        
+        let match_date = parse_date_to_int(m.date.c_str());
+        let days_ago = approx_days_between(match_date, max_date);
+        let w = get_weight(days_ago, weights);
+        
+        if (w < 0.001) continue;  // Skip if weight is effectively 0
         
         // Process Home Team
         let home_name = m.home_team.c_str();
@@ -123,21 +219,21 @@ fn calculate_stats(matches: Vec<FootballMatch>) -> Map<TeamStatsRef> {
             away_stats = away_stats_opt.unwrap().ptr;
         }
         
-        // Update stats
-        home_stats.played = home_stats.played + 1;
-        away_stats.played = away_stats.played + 1;
-        home_stats.goals_for = home_stats.goals_for + m.home_goals;
-        home_stats.goals_against = home_stats.goals_against + m.away_goals;
-        away_stats.goals_for = away_stats.goals_for + m.away_goals;
-        away_stats.goals_against = away_stats.goals_against + m.home_goals;
+        // Update weighted stats
+        home_stats.played = home_stats.played + w;
+        away_stats.played = away_stats.played + w;
+        home_stats.goals_for = home_stats.goals_for + (float)m.home_goals * w;
+        home_stats.goals_against = home_stats.goals_against + (float)m.away_goals * w;
+        away_stats.goals_for = away_stats.goals_for + (float)m.away_goals * w;
+        away_stats.goals_against = away_stats.goals_against + (float)m.home_goals * w;
         
         if (m.result == 'H') {
-            home_stats.points = home_stats.points + 3;
+            home_stats.points = home_stats.points + 3.0 * w;
         } else if (m.result == 'A') {
-            away_stats.points = away_stats.points + 3;
+            away_stats.points = away_stats.points + 3.0 * w;
         } else {
-            home_stats.points = home_stats.points + 1;
-            away_stats.points = away_stats.points + 1;
+            home_stats.points = home_stats.points + 1.0 * w;
+            away_stats.points = away_stats.points + 1.0 * w;
         }
     }
     

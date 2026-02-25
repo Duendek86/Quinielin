@@ -58,13 +58,18 @@ fn main(argc: int, argv: char**) -> int {
         }
     }
 
+    let max_date = 0;
     if (all_matches.len > 0) {
         let last_m = all_matches.get(all_matches.len - 1);
         printf("Fecha del ultimo partido registrado: %s\n", last_m.date.c_str());
+        max_date = parse_date_to_int(last_m.date.c_str());
     }
 
-    // Calcular estadísticas reales
-    let stats_map = calculate_stats(all_matches);
+    // Cargar pesos desde configuración (o usar valores por defecto)
+    let weights = load_weights("data/weights.cfg");
+    
+    // Calcular estadísticas ponderadas
+    let stats_map = calculate_stats(all_matches, weights, max_date);
     printf("Estadísticas procesadas para %d equipos.\n", stats_map.len);
     
     // Leer partidos de la Quiniela desde data/quiniela.json
@@ -126,16 +131,31 @@ fn main(argc: int, argv: char**) -> int {
                     let home = h_opt.unwrap().ptr;
                     let away = a_opt.unwrap().ptr;
                     
-                    let p = predict_match(home, away);
-                    printf(" %2d | %-20s | %-20s | %.0f%%  %.0f%%  %.0f%% | %c\n",
-                           match_num,
-                           local_name.c_str(), visit_name.c_str(),
-                           p.prob_1 * 100.0, p.prob_x * 100.0, p.prob_2 * 100.0,
-                           p.forecast);
+                    if (match_num == 15) {
+                        let h_g = predict_goals(home, away, true);
+                        let a_g = predict_goals(away, home, false);
+                        printf(" %2d | %-20s | %-20s | PLENO AL 15     | %c-%c\n",
+                               match_num,
+                               local_name.c_str(), visit_name.c_str(),
+                               h_g, a_g);
+                    } else {
+                        let p = predict_match(home, away);
+                        printf(" %2d | %-20s | %-20s | %.0f%%  %.0f%%  %.0f%% | %c\n",
+                               match_num,
+                               local_name.c_str(), visit_name.c_str(),
+                               p.prob_1 * 100.0, p.prob_x * 100.0, p.prob_2 * 100.0,
+                               p.forecast);
+                    }
                 } else {
-                    printf(" %2d | %-20s | %-20s | ---  ---  --- | ?\n",
-                           match_num,
-                           local_name.c_str(), visit_name.c_str());
+                    if (match_num == 15) {
+                        printf(" %2d | %-20s | %-20s | PLENO AL 15     | ?-?\n",
+                               match_num,
+                               local_name.c_str(), visit_name.c_str());
+                    } else {
+                        printf(" %2d | %-20s | %-20s | ---  ---  --- | ?\n",
+                               match_num,
+                               local_name.c_str(), visit_name.c_str());
+                    }
                 }
             }
         }
