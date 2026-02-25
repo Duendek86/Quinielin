@@ -1,0 +1,25 @@
+import "../core.zc"
+import "../result.zc"
+import "../sys/net.zc"
+
+def Z_AF_INET = 2;
+def Z_SOCK_STREAM = 1;
+def Z_SOCK_DGRAM = 2;
+
+// Wrapper functions for platform independence
+// Return isize for socket handle (handles 64-bit SOCKET on Windows)
+extern fn _z_socket(domain: c_int, type: c_int, proto: c_int) -> isize;
+extern fn _z_close(fd: isize) -> c_int;
+extern fn _z_read(fd: isize, buf: void*, count: usize) -> isize; 
+extern fn strerror(errnum: c_int) -> char*;
+extern fn _z_net_ensure_init() -> void;
+
+
+
+extern fn _z_net_bind(fd: isize, host: const char*, port: c_int) -> c_int;
+extern fn _z_net_connect(fd: isize, host: const char*, port: c_int) -> c_int;
+extern fn _z_net_accept(fd: isize) -> isize;
+extern fn _z_net_write(fd: isize, buf: const char*, n: usize) -> isize;
+extern fn _z_net_recvfrom(fd: isize, buf: char*, len: usize, host_out: char*, port_out: c_int*) -> isize;
+extern fn _z_net_sendto(fd: isize, buf: const char*, len: usize, host: const char*, port: c_int) -> isize;
+extern fn _z_net_bind_udp(fd: isize, host: const char*, port: c_int) -> c_int;

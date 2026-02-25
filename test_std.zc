@@ -1,0 +1,5 @@
+import "C:/Users/Ramon/Documents/Zen-C/std.zc"
+
+fn main() {
+    println "Hello from std.zc";
+}

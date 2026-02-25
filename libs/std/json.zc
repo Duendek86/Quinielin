@@ -1,0 +1,524 @@
+
+import "./core.zc"
+import "./vec.zc"
+import "./map.zc"
+import "./string.zc"
+import "./result.zc"
+import "./option.zc"
+import "./mem.zc"
+
+@derive(Eq)
+enum JsonType {
+    JSON_NULL,
+    JSON_BOOL,
+    JSON_NUMBER,
+    JSON_STRING,
+    JSON_ARRAY,
+    JSON_OBJECT
+}
+
+@derive(Eq)
+struct JsonValue {
+    kind: JsonType;
+    string_val: char*;
+    number_val: double;
+    bool_val: bool;
+    array_val: Vec<JsonValue*>*;
+    object_val: Map<JsonValue*>*;
+}
+
+
+alias JsonValuePtr = JsonValue*;
+
+raw {
+    Vec_JsonValuePtr Vec_JsonValuePtr__new();
+    void Vec_JsonValuePtr__push(Vec_JsonValuePtr* self, JsonValue* item);
+    Map_JsonValuePtr Map_JsonValuePtr__new();
+    void Map_JsonValuePtr__put(Map_JsonValuePtr* self, char* key, JsonValue* val);
+    
+    static void _json_skip_ws(const char** p) {
+        while (**p == ' ' || **p == '\t' || **p == '\n' || **p == '\r') (*p)++;
+    }
+    
+    static char* _json_parse_string(const char** p) {
+        if (**p != '"') return NULL;
+        (*p)++;
+        char buf[4096]; int len = 0;
+        while (**p && **p != '"') {
+            if (**p == '\\' && (*p)[1]) {
+                (*p)++;
+                char c = **p;
+                if (c == 'n') buf[len++] = '\n';
+                else if (c == 't') buf[len++] = '\t';
+                else if (c == 'r') buf[len++] = '\r';
+                else if (c == '"') buf[len++] = '"';
+                else if (c == '\\') buf[len++] = '\\';
+                else buf[len++] = c;
+            } else {
+                buf[len++] = **p;
+            }
+            (*p)++;
+        }
+        if (**p == '"') (*p)++;
+        buf[len] = '\0';
+        return strdup(buf);
+    }
+    
+    static struct JsonValue* _json_parse_value(const char** p);
+    
+    static struct JsonValue* _json_parse_array(const char** p) {
+        if (**p != '[') return NULL;
+        (*p)++;
+        struct JsonValue* arr = malloc(sizeof(struct JsonValue));
+        arr->kind = JsonType_JSON_ARRAY();
+        arr->string_val = 0; arr->number_val = 0; arr->bool_val = 0; arr->object_val = 0;
+        arr->array_val = malloc(sizeof(Vec_JsonValuePtr));
+        *(arr->array_val) = Vec_JsonValuePtr__new();
+        
+        _json_skip_ws(p);
+        if (**p == ']') { (*p)++; return arr; }
+        
+        while (1) {
+            _json_skip_ws(p);
+            struct JsonValue* val = _json_parse_value(p);
+            if (!val) return NULL;
+            Vec_JsonValuePtr__push(arr->array_val, val);
+            _json_skip_ws(p);
+            if (**p == ']') { (*p)++; return arr; }
+            if (**p != ',') return NULL;
+            (*p)++;
+        }
+    }
+    
+    static struct JsonValue* _json_parse_object(const char** p) {
+        if (**p != '{') return NULL;
+        (*p)++;
+        struct JsonValue* obj = malloc(sizeof(struct JsonValue));
+        obj->kind = JsonType_JSON_OBJECT();
+        obj->string_val = 0; obj->number_val = 0; obj->bool_val = 0; obj->array_val = 0;
+        obj->object_val = malloc(sizeof(Map_JsonValuePtr));
+        *(obj->object_val) = Map_JsonValuePtr__new();
+        
+        _json_skip_ws(p);
+        if (**p == '}') { (*p)++; return obj; }
+        
+        while (1) {
+            _json_skip_ws(p);
+            char* key = _json_parse_string(p);
+            if (!key) return NULL;
+            _json_skip_ws(p);
+            if (**p != ':') { free(key); return NULL; }
+            (*p)++;
+            _json_skip_ws(p);
+            struct JsonValue* val = _json_parse_value(p);
+            if (!val) { free(key); return NULL; }
+            Map_JsonValuePtr__put(obj->object_val, key, val);
+            free(key);
+            _json_skip_ws(p);
+            if (**p == '}') { (*p)++; return obj; }
+            if (**p != ',') return NULL;
+            (*p)++;
+        }
+    }
+    
+    static struct JsonValue* _json_parse_value(const char** p) {
+        _json_skip_ws(p);
+        if (**p == '\0') return NULL;
+        
+        if (strncmp(*p, "null", 4) == 0) {
+            *p += 4;
+            struct JsonValue* v = malloc(sizeof(struct JsonValue));
+            v->kind = JsonType_JSON_NULL();
+            v->string_val = 0; v->number_val = 0; v->bool_val = 0; v->array_val = 0; v->object_val = 0;
+            return v;
+        }
+        if (strncmp(*p, "true", 4) == 0) {
+            *p += 4;
+            struct JsonValue* v = malloc(sizeof(struct JsonValue));
+            v->kind = JsonType_JSON_BOOL();
+            v->string_val = 0; v->number_val = 0; v->bool_val = 1; v->array_val = 0; v->object_val = 0;
+            return v;
+        }
+        if (strncmp(*p, "false", 5) == 0) {
+            *p += 5;
+            struct JsonValue* v = malloc(sizeof(struct JsonValue));
+            v->kind = JsonType_JSON_BOOL();
+            v->string_val = 0; v->number_val = 0; v->bool_val = 0; v->array_val = 0; v->object_val = 0;
+            return v;
+        }
+        if (**p == '"') {
+            char* s = _json_parse_string(p);
+            if (!s) return NULL;
+            struct JsonValue* v = malloc(sizeof(struct JsonValue));
+            v->kind = JsonType_JSON_STRING();
+            v->string_val = s; v->number_val = 0; v->bool_val = 0; v->array_val = 0; v->object_val = 0;
+            return v;
+        }
+        if (**p == '-' || (**p >= '0' && **p <= '9')) {
+            char* end;
+            double num = strtod(*p, &end);
+            if (end == *p) return NULL;
+            *p = end;
+            struct JsonValue* v = malloc(sizeof(struct JsonValue));
+            v->kind = JsonType_JSON_NUMBER();
+            v->string_val = 0; v->number_val = num; v->bool_val = 0; v->array_val = 0; v->object_val = 0;
+            return v;
+        }
+        if (**p == '[') return _json_parse_array(p);
+        if (**p == '{') return _json_parse_object(p);
+        return NULL;
+    }
+    
+    struct JsonValue* _json_do_parse(const char* json) {
+        const char* ptr = json;
+        return _json_parse_value(&ptr);
+    }
+}
+
+impl JsonValue {
+    fn null() -> JsonValue {
+        return JsonValue { kind: JsonType::JSON_NULL(), string_val: 0, number_val: 0, bool_val: false, array_val: 0, object_val: 0 };
+    }
+    
+    fn bool(b: bool) -> JsonValue {
+        return JsonValue { kind: JsonType::JSON_BOOL(), string_val: 0, number_val: 0, bool_val: b, array_val: 0, object_val: 0 };
+    }
+    
+    fn number(n: double) -> JsonValue {
+        return JsonValue { kind: JsonType::JSON_NUMBER(), string_val: 0, number_val: n, bool_val: false, array_val: 0, object_val: 0 };
+    }
+    
+    fn string(s: char*) -> JsonValue {
+        return JsonValue { kind: JsonType::JSON_STRING(), string_val: strdup(s), number_val: 0, bool_val: false, array_val: 0, object_val: 0 };
+    }
+    
+    fn array() -> JsonValue {
+        let v: Vec<JsonValue*>* = malloc(sizeof(Vec_JsonValuePtr));
+        *v = Vec_JsonValuePtr::new();
+        return JsonValue { kind: JsonType::JSON_ARRAY(), string_val: 0, number_val: 0, bool_val: false, array_val: v, object_val: 0 };
+    }
+    
+    fn object() -> JsonValue {
+        let m: Map<JsonValue*>* = malloc(sizeof(Map_JsonValuePtr));
+        *m = Map_JsonValuePtr::new();
+        return JsonValue { kind: JsonType::JSON_OBJECT(), string_val: 0, number_val: 0, bool_val: false, array_val: 0, object_val: m };
+    }
+
+    // ============================================
+    // Heap-allocated factory methods (returns pointers)
+    // ============================================
+
+    fn null_ptr() -> JsonValue* {
+        let p: JsonValue* = malloc(sizeof(JsonValue));
+        *p = JsonValue::null();
+        return p;
+    }
+
+    fn bool_ptr(b: bool) -> JsonValue* {
+        let p: JsonValue* = malloc(sizeof(JsonValue));
+        *p = JsonValue::bool(b);
+        return p;
+    }
+
+    fn number_ptr(n: double) -> JsonValue* {
+        let p: JsonValue* = malloc(sizeof(JsonValue));
+        *p = JsonValue::number(n);
+        return p;
+    }
+
+    fn string_ptr(s: char*) -> JsonValue* {
+        let p: JsonValue* = malloc(sizeof(JsonValue));
+        *p = JsonValue::string(s);
+        return p;
+    }
+
+    fn array_ptr() -> JsonValue* {
+        let p: JsonValue* = malloc(sizeof(JsonValue));
+        *p = JsonValue::array();
+        return p;
+    }
+
+    fn object_ptr() -> JsonValue* {
+        let p: JsonValue* = malloc(sizeof(JsonValue));
+        *p = JsonValue::object();
+        return p;
+    }
+
+    fn push(self, val: JsonValue) {
+        if (self.kind.tag != JsonType::JSON_ARRAY().tag) return;
+        let p: JsonValue* = malloc(sizeof(JsonValue));
+        *p = val;
+        self.array_val.push(p);
+    }
+    
+    fn set(self, key: char*, val: JsonValue) {
+        if (self.kind.tag != JsonType::JSON_OBJECT().tag) return;
+        let p: JsonValue* = malloc(sizeof(JsonValue));
+        *p = val;
+        self.object_val.put(key, p);
+    }
+    
+    fn parse(json: char*) -> Result<JsonValue*> {
+        let result: JsonValue* = _json_do_parse(json);
+        if (result != NULL) {
+            return Result<JsonValue*>::Ok(result);
+        }
+        return Result<JsonValue*>::Err("JSON parse error");
+    }
+
+    // ============================================
+    // Type checking helpers
+    // ============================================
+
+    fn is_null(self) -> bool {
+        return self.kind.tag == JsonType::JSON_NULL().tag;
+    }
+
+    fn is_bool(self) -> bool {
+        return self.kind.tag == JsonType::JSON_BOOL().tag;
+    }
+
+    fn is_number(self) -> bool {
+        return self.kind.tag == JsonType::JSON_NUMBER().tag;
+    }
+
+    fn is_string(self) -> bool {
+        return self.kind.tag == JsonType::JSON_STRING().tag;
+    }
+
+    fn is_array(self) -> bool {
+        return self.kind.tag == JsonType::JSON_ARRAY().tag;
+    }
+
+    fn is_object(self) -> bool {
+        return self.kind.tag == JsonType::JSON_OBJECT().tag;
+    }
+
+    // ============================================
+    // Direct value extractors
+    // ============================================
+
+    fn as_string(self) -> Option<char*> {
+        if self.kind.tag == JsonType::JSON_STRING().tag {
+            return Option<char*>::Some(self.string_val);
+        }
+        return Option<char*>::None();
+    }
+
+    fn as_int(self) -> Option<int> {
+        if self.kind.tag == JsonType::JSON_NUMBER().tag {
+            return Option<int>::Some((int)self.number_val);
+        }
+        return Option<int>::None();
+    }
+
+    fn as_float(self) -> Option<double> {
+        if self.kind.tag == JsonType::JSON_NUMBER().tag {
+            return Option<double>::Some(self.number_val);
+        }
+        return Option<double>::None();
+    }
+
+    fn as_bool(self) -> Option<bool> {
+        if self.kind.tag == JsonType::JSON_BOOL().tag {
+            return Option<bool>::Some(self.bool_val);
+        }
+        return Option<bool>::None();
+    }
+
+    // ============================================
+    // Object key accessors
+    // ============================================
+
+    fn get(self, key: char*) -> Option<JsonValue*> {
+        if self.kind.tag != JsonType::JSON_OBJECT().tag {
+            return Option<JsonValue*>::None();
+        }
+        if Map<JsonValue*>::contains(self.object_val, key) {
+            return Map<JsonValue*>::get(self.object_val, key);
+        }
+        return Option<JsonValue*>::None();
+    }
+
+    fn get_string(self, key: char*) -> Option<char*> {
+        let opt = self.get(key);
+        if opt.is_none() {
+            return Option<char*>::None();
+        }
+        let val = opt.unwrap();
+        return (*val).as_string();
+    }
+
+    fn get_int(self, key: char*) -> Option<int> {
+        let opt = self.get(key);
+        if opt.is_none() {
+            return Option<int>::None();
+        }
+        let val = opt.unwrap();
+        return (*val).as_int();
+    }
+
+    fn get_float(self, key: char*) -> Option<double> {
+        let opt = self.get(key);
+        if opt.is_none() {
+            return Option<double>::None();
+        }
+        let val = opt.unwrap();
+        return (*val).as_float();
+    }
+
+    fn get_bool(self, key: char*) -> Option<bool> {
+        let opt = self.get(key);
+        if opt.is_none() {
+            return Option<bool>::None();
+        }
+        let val = opt.unwrap();
+        return (*val).as_bool();
+    }
+
+    fn get_object(self, key: char*) -> Option<JsonValue*> {
+        let opt = self.get(key);
+        if opt.is_none() {
+            return Option<JsonValue*>::None();
+        }
+        let val = opt.unwrap();
+        if (*val).kind.tag == JsonType::JSON_OBJECT().tag {
+            return Option<JsonValue*>::Some(val);
+        }
+        return Option<JsonValue*>::None();
+    }
+
+    fn get_array(self, key: char*) -> Option<JsonValue*> {
+        let opt = self.get(key);
+        if opt.is_none() {
+            return Option<JsonValue*>::None();
+        }
+        let val = opt.unwrap();
+        if (*val).kind.tag == JsonType::JSON_ARRAY().tag {
+            return Option<JsonValue*>::Some(val);
+        }
+        return Option<JsonValue*>::None();
+    }
+
+    // ============================================
+    // Array accessors
+    // ============================================
+
+    fn at(self, index: usize) -> Option<JsonValue*> {
+        if self.kind.tag != JsonType::JSON_ARRAY().tag {
+            return Option<JsonValue*>::None();
+        }
+        if index >= self.array_val.length() {
+            return Option<JsonValue*>::None();
+        }
+        return Option<JsonValue*>::Some(self.array_val.get(index));
+    }
+
+    fn len(self) -> usize {
+        if self.kind.tag == JsonType::JSON_ARRAY().tag {
+            return self.array_val.length();
+        }
+        if self.kind.tag == JsonType::JSON_OBJECT().tag {
+            return self.object_val.length();
+        }
+        return 0;
+    }
+
+    fn free(self) {
+        if (self.kind.tag == JsonType::JSON_STRING().tag) free(self.string_val);
+        if (self.kind.tag == JsonType::JSON_ARRAY().tag) {
+             let v: Vec<JsonValue*>* = self.array_val;
+             for (let i: usize = 0; i < v.length(); i = i + 1) {
+                 let item: JsonValue* = v.get(i);
+                 item.free();
+                 free(item);
+             }
+             v.clear();
+             free(v.data);
+             free(v);
+        }
+        if (self.kind.tag == JsonType::JSON_OBJECT().tag) {
+             let m: Map<JsonValue*>* = self.object_val;
+             for (let i: usize = 0; i < m.capacity(); i = i + 1) {
+                 if (m.is_slot_occupied(i)) {
+                     let child: JsonValue* = m.val_at(i);
+                     child.free();
+                     free(child);
+                 }
+             }
+             m.free();
+             free(m);
+        }
+    }
+}
+
+impl Drop for JsonValue {
+    fn drop(self) {
+        self.free();
+    }
+}
+
+impl JsonValue {
+    fn to_string(self) -> String {
+        let s = String::new("");
+        self.stringify(&s);
+        return s;
+    }
+
+    fn stringify(self, buf: String*) {
+        if (self.kind.tag == JsonType::JSON_NULL().tag) {
+            buf.append_c_ptr("null");
+        } else if (self.kind.tag == JsonType::JSON_BOOL().tag) {
+            if (self.bool_val) { buf.append_c_ptr("true"); } else { buf.append_c_ptr("false"); }
+        } else if (self.kind.tag == JsonType::JSON_NUMBER().tag) {
+            let tmp: char[64];
+            sprintf((char*)tmp, "%.15g", self.number_val); // Use %.15g for precision
+            buf.append_c_ptr((char*)tmp);
+        } else if (self.kind.tag == JsonType::JSON_STRING().tag) {
+            buf.append_c_ptr("\"");
+            let p = self.string_val;
+            let len = strlen(p);
+            for (let i = 0; i < len; i = i + 1) {
+                let c = p[i];
+                if (c == '"') buf.append_c_ptr("\\\"");
+                else if (c == '\\') buf.append_c_ptr("\\\\");
+                else if (c == '\n') buf.append_c_ptr("\\n");
+                else if (c == '\t') buf.append_c_ptr("\\t");
+                else if (c == '\r') buf.append_c_ptr("\\r");
+                else if (c == '\b') buf.append_c_ptr("\\b");
+                else if (c == '\f') buf.append_c_ptr("\\f");
+                else {
+                    let tmp: char[2]; tmp[0] = c; tmp[1] = 0;
+                    buf.append_c_ptr((char*)tmp);
+                }
+            }
+            buf.append_c_ptr("\"");
+        } else if (self.kind.tag == JsonType::JSON_ARRAY().tag) {
+            buf.append_c_ptr("[");
+            let v = self.array_val;
+            for (let i: usize = 0; i < v.length(); i = i + 1) {
+                if (i > 0) buf.append_c_ptr(",");
+                let item = v.get(i);
+                (*item).stringify(buf);
+            }
+            buf.append_c_ptr("]");
+        } else if (self.kind.tag == JsonType::JSON_OBJECT().tag) {
+            buf.append_c_ptr("{{");
+            let m = self.object_val;
+            let first = true;
+            for (let i: usize = 0; i < m.capacity(); i = i + 1) {
+                if (m.is_slot_occupied(i)) {
+                    if (!first) buf.append_c_ptr(",");
+                    first = false;
+                    let key = m.key_at(i);
+                    buf.append_c_ptr("\"");
+                    buf.append_c_ptr(key); // Assuming keys are simple for now, but really should escape them too
+                    buf.append_c_ptr("\":");
+                    let val = m.val_at(i);
+                    val.stringify(buf);
+                }
+            }
+            buf.append_c_ptr("}");
+        }
+    }
+}

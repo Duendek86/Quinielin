@@ -1,0 +1,145 @@
+
+import "./core.zc"
+import "./string.zc"
+
+include <stdio.h>
+include <stdarg.h>
+
+// These work directly with const char* in extern declarations
+extern fn vprintf(fmt: const char*, ap: va_list) -> c_int;
+
+// vsnprintf is problematic on macOS because it's a macro that expands to a builtin with a different signature
+// so we wrap it in a C function to avoid the conflict
+extern fn _z_vsnprintf(str: char*, size: usize, fmt: const char*, ap: va_list) -> c_int;
+
+// EOF is typically -1, but we define it for portability
+def Z_EOF = -1;
+
+// Minimal raw block: only for truly opaque FILE* types that can't be
+// represented in Zen-C extern declarations without type conflicts.
+// These wrappers use void* to avoid FILE* declaration conflicts.
+raw {
+    void* _z_get_stdin(void) { return stdin; }
+    int _z_fgetc(void* stream) { return fgetc((FILE*)stream); }
+    int _z_vsnprintf(char* str, size_t size, const char* fmt, va_list ap) {
+        return vsnprintf(str, size, fmt, ap);
+    }
+}
+
+extern fn _z_get_stdin() -> void*;
+extern fn _z_fgetc(stream: void*) -> c_int;
+
+fn format(fmt: char*, ...) -> char* {
+    static let buffer: char[1024];
+    let ap: va_list;
+    va_start(ap, fmt);
+
+    _z_vsnprintf(buffer, 1024, fmt, ap);
+    va_end(ap);
+
+    return (char*)buffer;
+}
+
+fn format_into(buffer: char*, size: usize, fmt: char*, ...) -> c_int {
+    let ap: va_list;
+    va_start(ap, fmt);
+
+    let ret = _z_vsnprintf(buffer, size, fmt, ap);
+    va_end(ap);
+
+    return ret;
+}
+
+fn format_new(fmt: char*, ...) -> char* {
+    let buffer: char* = malloc(1024);
+    if buffer == NULL return NULL;
+    
+    let ap: va_list;
+    va_start(ap, fmt);
+
+    _z_vsnprintf(buffer, 1024, fmt, ap);
+    va_end(ap);
+
+    return buffer;
+}
+
+fn print(fmt: char*, ...) -> c_int {
+    let ap: va_list;
+    va_start(ap, fmt);
+    let ret = vprintf(fmt, ap);
+    va_end(ap);
+    return ret;
+}
+
+fn println(fmt: char*, ...) -> c_int {
+    let ap: va_list;
+    va_start(ap, fmt);
+    let ret = vprintf(fmt, ap);
+    va_end(ap);
+    puts("");
+    return ret + 1;
+}
+
+fn readln() -> char* {
+    let cap: usize = 64;
+    let len: usize = 0;
+    let line: char* = malloc(cap);
+    if (line == NULL) return NULL;
+    
+    let c: c_int;
+    let std_in = _z_get_stdin();
+
+    while (true) {
+        c = _z_fgetc(std_in);
+        // Explicit cast to avoid -1 becoming UINT64_MAX in some contexts if treated as unsigned
+        let eof_c: c_int = -1; 
+        if (c == eof_c) break;
+        let nl_c: c_int = 10;
+        if (c == nl_c) break; // '\n'
+
+        if (len + 1 >= cap) {
+            cap = cap * 2;
+            let n = realloc(line, cap);
+            if (n == NULL) {
+                free(line);
+                return NULL;
+            }
+            line = n;
+        }
+        
+        line[len] = c;
+        len = len + 1;
+    }
+    
+    let eof_final: c_int = Z_EOF;
+    if (len == 0 && c == eof_final) {
+        free(line);
+        return NULL;
+    }
+    
+    line[len] = 0;
+    return line;
+}
+
+// Integer to string conversion
+// Returns a static buffer - NOT thread-safe, use itos_new for heap allocation
+fn itos(n: int) -> char* {
+    static let buffer: char[32];
+    sprintf((char*)buffer, "%d", n);
+    return (char*)buffer;
+}
+
+// Heap-allocated integer to string - caller must free
+fn itos_new(n: int) -> char* {
+    let buffer: char* = malloc(32);
+    if (buffer == NULL) return NULL;
+    sprintf(buffer, "%d", n);
+    return buffer;
+}
+
+// Unsigned integer to string
+fn utos(n: uint) -> char* {
+    static let buffer: char[32];
+    sprintf((char*)buffer, "%u", n);
+    return (char*)buffer;
+}

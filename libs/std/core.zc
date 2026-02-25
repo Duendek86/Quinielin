@@ -1,0 +1,17 @@
+
+include <stdlib.h>
+include <string.h>
+include <stdio.h>
+include <stdbool.h>
+include <stdarg.h>
+
+let __zen_hash_seed: usize = 14695981039346656037;
+
+extern fn exit(code: int);
+
+fn _zen_panic(file: const char*, line: int, func: const char*, msg: const char*) {
+    fprintf(stderr, "%s:%d (%s): Panic: %s\n", file, line, func, msg);
+    exit(1);
+}
+
+#define panic(msg) _zen_panic(__FILE__, __LINE__, __func__, msg)

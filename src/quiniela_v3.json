@@ -1,0 +1,77 @@
+[
+    {
+        "numero": 1,
+        "local": "RAYO",
+        "visitante": "ATH.CLUB"
+    },
+    {
+        "numero": 2,
+        "local": "BARCELONA",
+        "visitante": "VILLARREAL"
+    },
+    {
+        "numero": 3,
+        "local": "MALLORCA",
+        "visitante": "R.SOCIEDAD"
+    },
+    {
+        "numero": 4,
+        "local": "R.OVIEDO",
+        "visitante": "AT.MADRID"
+    },
+    {
+        "numero": 5,
+        "local": "ELCHE",
+        "visitante": "ESPANYOL"
+    },
+    {
+        "numero": 6,
+        "local": "VALENCIA",
+        "visitante": "OSASUNA"
+    },
+    {
+        "numero": 7,
+        "local": "GIRONA",
+        "visitante": "CELTA"
+    },
+    {
+        "numero": 8,
+        "local": "R.MADRID",
+        "visitante": "GETAFE"
+    },
+    {
+        "numero": 9,
+        "local": "R.ZARAGOZA",
+        "visitante": "BURGOS"
+    },
+    {
+        "numero": 10,
+        "local": "GRANADA",
+        "visitante": "MÁLAGA"
+    },
+    {
+        "numero": 11,
+        "local": "CASTELLÓN",
+        "visitante": "RACING S."
+    },
+    {
+        "numero": 12,
+        "local": "SPORTING",
+        "visitante": "LEGANÉS"
+    },
+    {
+        "numero": 13,
+        "local": "C. LEONESA",
+        "visitante": "LAS PALMAS"
+    },
+    {
+        "numero": 14,
+        "local": "EIBAR",
+        "visitante": "CÁDIZ"
+    },
+    {
+        "numero": 15,
+        "local": "BETIS",
+        "visitante": "SEVILLA"
+    }
+]

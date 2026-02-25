@@ -1,0 +1,77 @@
+[
+    {
+        "numero": 1,
+        "local": "2€",
+        "visitante": "Jugar"
+    },
+    {
+        "numero": 2,
+        "local": "2€",
+        "visitante": "Jugar"
+    },
+    {
+        "numero": 3,
+        "local": "1,5€",
+        "visitante": "Jugar"
+    },
+    {
+        "numero": 4,
+        "local": "1,5€",
+        "visitante": "Jugar"
+    },
+    {
+        "numero": 5,
+        "local": "1,5€",
+        "visitante": "Jugar"
+    },
+    {
+        "numero": 6,
+        "local": "PEÑA1X2",
+        "visitante": "1X2/J44"
+    },
+    {
+        "numero": 7,
+        "local": "AWE fusion",
+        "visitante": "1X2/J44"
+    },
+    {
+        "numero": 8,
+        "local": "Super15",
+        "visitante": "1X2/J44"
+    },
+    {
+        "numero": 9,
+        "local": "Faciles y Rentables",
+        "visitante": "1X2/J44"
+    },
+    {
+        "numero": 10,
+        "local": "QUINIELATICAS",
+        "visitante": "1X2/J44"
+    },
+    {
+        "numero": 11,
+        "local": "Anónimo",
+        "visitante": "1X2/J44"
+    },
+    {
+        "numero": 12,
+        "local": "Beca",
+        "visitante": "1X2/J44"
+    },
+    {
+        "numero": 13,
+        "local": "lovamo",
+        "visitante": "1X2/J44"
+    },
+    {
+        "numero": 14,
+        "local": "gobain",
+        "visitante": "1X2/J44"
+    },
+    {
+        "numero": 15,
+        "local": "uXdos",
+        "visitante": "1X2/J44"
+    }
+]

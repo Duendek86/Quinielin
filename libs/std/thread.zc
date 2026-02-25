@@ -1,0 +1,183 @@
+
+include <pthread.h>
+include <time.h>
+include <unistd.h>
+
+import "./core.zc"
+import "./result.zc"
+import "./mem.zc"
+
+// Essential raw block: required for pthread operations and closure trampolining
+// This block cannot be eliminated because:
+// 1. z_closure_T is an internal compiler type for Zen-C closures
+// 2. pthread_t, pthread_mutex_t are opaque types that can't be extern'd with void*
+// 3. The trampoline function needs to cast and execute Zen-C closures
+raw {
+    typedef void (*ZenThreadFunc)(void*);
+    
+    struct ZenThreadCtx {
+        void *func_ptr;
+        void *ctx;
+    };
+    
+    static void* _z_thread_trampoline(void *arg) {
+        struct ZenThreadCtx *c = (struct ZenThreadCtx*)arg;
+        z_closure_T *closure = (z_closure_T*)c;
+        void (*f)(void*) = (void(*)(void*))closure->func;
+        f(closure->ctx);
+        free(c);
+        return NULL;
+    }
+
+    static int _z_thread_equal(void* handle1, void* handle2) {
+        return pthread_equal((pthread_t)handle1, (pthread_t)handle2);
+    }
+    
+    static int _z_thread_spawn(void *ctx_copy, size_t *out_handle) {
+        pthread_t pt;
+        int ret = pthread_create(&pt, NULL, _z_thread_trampoline, ctx_copy);
+        if (ret == 0) {
+            *out_handle = (size_t)pt;
+        }
+        return (int)ret;
+    }
+    
+    static int _z_thread_join(void *handle) {
+        return (int)pthread_join((pthread_t)handle, NULL);
+    }
+
+    static int _z_thread_detach(void* handle) {
+        return pthread_detach((pthread_t)handle);
+    }
+
+    static int _z_thread_cancel(void* handle) {
+        return pthread_cancel((pthread_t)handle);
+    }
+    
+    static void _z_mutex_init(void *ptr) {
+        pthread_mutex_init((pthread_mutex_t*)ptr, NULL);
+    }
+    
+    static void _z_mutex_lock(void *ptr) {
+        pthread_mutex_lock((pthread_mutex_t*)ptr);
+    }
+    
+    static void _z_mutex_unlock(void *ptr) {
+        pthread_mutex_unlock((pthread_mutex_t*)ptr);
+    }
+    
+    static void _z_mutex_destroy(void *ptr) {
+        pthread_mutex_destroy((pthread_mutex_t*)ptr);
+    }
+    
+    static void _z_usleep(int micros) {
+        usleep(micros);
+    }
+}
+
+extern fn _z_thread_equal(handle1: void*, handle2: void*) -> c_int;
+extern fn _z_thread_spawn(ctx: void*, out: usize*) -> c_int;
+extern fn _z_thread_join(handle: void*) -> c_int;
+extern fn _z_thread_detach(handle: void*) -> c_int;
+extern fn _z_thread_cancel(handle: void*) -> c_int;
+extern fn _z_mutex_init(ptr: void*);
+extern fn _z_mutex_lock(ptr: void*);
+extern fn _z_mutex_unlock(ptr: void*);
+extern fn _z_mutex_destroy(ptr: void*);
+extern fn _z_usleep(micros: c_int);
+
+
+
+struct Thread {
+    handle: void*;
+}
+
+impl Thread {
+    fn eq(self, other: const Thread) -> bool {
+        return _z_thread_equal(self.handle, other.handle);
+    }
+    fn neq(self, other: const Thread) -> bool {
+        return !(self == other);
+    }
+
+    fn spawn(func: fn()) -> Result<Thread> {
+        let out_handle: usize = 0; 
+        
+        let ctx = malloc(16); // z_closure_T is 16 bytes
+        if (ctx == NULL) return Result<Thread>::Err("OOM");
+        
+        memcpy(ctx, &func, 16);
+
+        let ret = _z_thread_spawn(ctx, &out_handle);
+        
+        if ret != 0 {
+            free(ctx);
+            return Result<Thread>::Err("Failed to create thread");
+        }
+        
+        return Result<Thread>::Ok(Thread { handle: (void*)out_handle });
+    }
+    
+    fn join(self) -> Result<bool> {
+        let err = _z_thread_join(self.handle);
+        if err {
+            return Result<bool>::Err("Join failed");
+        }
+        return Result<bool>::Ok(true);
+    }
+
+    fn detach(self) -> Result<bool> {
+        let err = _z_thread_detach(self.handle);
+        if err {
+            return Result<bool>::Err("Detach failed");
+        }
+        return Result<bool>::Ok(true);
+    }
+
+    fn cancel(self) -> Result<bool> {
+        let err = _z_thread_cancel(self.handle);
+        if err {
+            return Result<bool>::Err("Cancel failed");
+        }
+        return Result<bool>::Ok(true);
+    }
+}
+
+struct Mutex {
+    handle: void*; 
+}
+
+impl Mutex {
+    fn new() -> Mutex {
+        let ptr = malloc(64); 
+        _z_mutex_init(ptr);
+        return Mutex { handle: ptr };
+    }
+    
+    fn lock(self) {
+        _z_mutex_lock(self.handle);
+    }
+    
+    fn unlock(self) {
+        _z_mutex_unlock(self.handle);
+    }
+    
+    fn free(self) {
+        if self.handle {
+            _z_mutex_destroy(self.handle);
+            free(self.handle);
+            self.handle = NULL;
+        }
+    }
+}
+
+impl Drop for Mutex {
+    fn drop(self) {
+        self.free();
+    }
+}
+
+fn sleep_ms(ms: int) {
+    let micros: c_int = (c_int)(ms * 1000);
+    _z_usleep(micros);
+}

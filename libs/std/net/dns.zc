@@ -1,0 +1,30 @@
+
+import "../core.zc"
+import "../result.zc"
+import "../string.zc"
+import "../vec.zc"
+import "./socket.zc"
+import "../sys/net.zc"
+
+extern fn _z_net_ensure_init() -> void;
+
+// Helper struct for getaddrinfo results
+struct Dns {
+}
+
+
+
+extern fn _z_dns_resolve(host: const char*, out_buf: char*, out_len: usize) -> int;
+
+impl Dns {
+    fn resolve(host: char*) -> Result<String> {
+        let buf: char[64]; // INET_ADDRSTRLEN is 16, 64 is safe
+        let res = _z_dns_resolve(host, &buf[0], 64);
+        
+        if (res != 0) {
+            return Result<String>::Err("DNS resolution failed");
+        }
+        
+        return Result<String>::Ok(String::new(&buf[0]));
+    }
+}

@@ -1,0 +1,124 @@
+
+// 128-bit vectors (SSE / NEON)
+
+/// 4x 32-bit float (128-bit)
+@vector(4)
+struct f32x4 {
+    v: f32;
+}
+
+/// 2x 64-bit float (128-bit)
+@vector(2)
+struct f64x2 {
+    v: f64;
+}
+
+/// 4x 32-bit signed int (128-bit)
+@vector(4)
+struct i32x4 {
+    v: i32;
+}
+
+/// 4x 32-bit unsigned int (128-bit)
+@vector(4)
+struct u32x4 {
+    v: u32;
+}
+
+/// 2x 64-bit signed int (128-bit)
+@vector(2)
+struct i64x2 {
+    v: i64;
+}
+
+/// 2x 64-bit unsigned int (128-bit)
+@vector(2)
+struct u64x2 {
+    v: u64;
+}
+
+/// 8x 16-bit signed int (128-bit)
+@vector(8)
+struct i16x8 {
+    v: i16;
+}
+
+/// 8x 16-bit unsigned int (128-bit)
+@vector(8)
+struct u16x8 {
+    v: u16;
+}
+
+/// 16x 8-bit signed int (128-bit)
+@vector(16)
+struct i8x16 {
+    v: i8;
+}
+
+/// 16x 8-bit unsigned int (128-bit)
+@vector(16)
+struct u8x16 {
+    v: u8;
+}
+
+// 256-bit vectors (AVX / AVX2)
+
+/// 8x 32-bit float (256-bit)
+@vector(8)
+struct f32x8 {
+    v: f32;
+}
+
+/// 4x 64-bit float (256-bit)
+@vector(4)
+struct f64x4 {
+    v: f64;
+}
+
+/// 8x 32-bit signed int (256-bit)
+@vector(8)
+struct i32x8 {
+    v: i32;
+}
+
+/// 8x 32-bit unsigned int (256-bit)
+@vector(8)
+struct u32x8 {
+    v: u32;
+}
+
+/// 4x 64-bit signed int (256-bit)
+@vector(4)
+struct i64x4 {
+    v: i64;
+}
+
+/// 4x 64-bit unsigned int (256-bit)
+@vector(4)
+struct u64x4 {
+    v: u64;
+}
+
+/// 16x 16-bit signed int (256-bit)
+@vector(16)
+struct i16x16 {
+    v: i16;
+}
+
+/// 16x 16-bit unsigned int (256-bit)
+@vector(16)
+struct u16x16 {
+    v: u16;
+}
+
+/// 32x 8-bit signed int (256-bit)
+@vector(32)
+struct i8x32 {
+    v: i8;
+}
+
+/// 32x 8-bit unsigned int (256-bit)
+@vector(32)
+struct u8x32 {
+    v: u8;
+}

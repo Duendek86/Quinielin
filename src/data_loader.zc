@@ -1,27 +1,145 @@
-import "std/core.zc"
-import "std/fs.zc"
-import "std/vec.zc"
+import "libs/std.zc"
 
-struct Match {
-    home_team: *char;
-    away_team: *char;
+extern fn atoi(s: const char*) -> int;
+
+struct FootballMatch {
+    date: String;
+    home_team: String;
+    away_team: String;
     home_goals: int;
     away_goals: int;
     result: char; // 'H', 'D', 'A'
 }
 
+impl FootballMatch {
+    fn free(self) {
+        self.date.free();
+        self.home_team.free();
+        self.away_team.free();
+    }
+}
+
 struct TeamStats {
-    name: *char;
+    name: String;
     played: int;
     goals_for: int;
     goals_against: int;
     points: int;
 }
 
-fn parse_csv(filename: *char) -> Vec<Match> {
-    let matches = Vec<Match>::new();
-    // TODO: Implement CSV parsing logic
-    // We will read the file line by line and split by commas
-    printf("Procesando fichero: %s\n", filename);
+impl TeamStats {
+    fn new(name: String) -> TeamStats {
+        return TeamStats {
+            name: name,
+            played: 0,
+            goals_for: 0,
+            goals_against: 0,
+            points: 0
+        };
+    }
+    
+    fn free(self) {
+        self.name.free();
+    }
+}
+
+fn parse_csv(filename: char*) -> Vec<FootballMatch> {
+    let matches = Vec<FootballMatch>::new();
+    
+    let content_res = File::read_all(filename);
+    if (content_res.is_err()) {
+        printf("Error leyendo fichero: %s\n", filename);
+        return matches;
+    }
+    
+    let content = content_res.unwrap();
+    let lines = content.split('\n');
+    
+    for (let i = 1; i < lines.len; i = i + 1) {
+        let line = lines.get(i);
+        if (line.is_empty()) continue;
+        
+        let parts = line.split(',');
+        if (parts.len >= 8) {
+            let date = parts.get(1).trim();
+            let home = parts.get(3).trim();
+            let away = parts.get(4).trim();
+            let hg_str = parts.get(5).trim();
+            let ag_str = parts.get(6).trim();
+            let res_str = parts.get(7).trim();
+            
+            let m = FootballMatch {
+                date: date,
+                home_team: home,
+                away_team: away,
+                home_goals: atoi(hg_str.c_str()),
+                away_goals: atoi(ag_str.c_str()),
+                result: res_str.c_str()[0]
+            };
+            
+            matches.push(m);
+        }
+    }
+    
+    content.free();
     return matches;
+}
+
+struct TeamStatsRef {
+    ptr: TeamStats*;
+}
+
+fn calculate_stats(matches: Vec<FootballMatch>) -> Map<TeamStatsRef> {
+    let stats_map = Map<TeamStatsRef>::new();
+    
+    for (let i = 0; i < matches.len; i = i + 1) {
+        let m = matches.get(i);
+        
+        // Process Home Team
+        let home_name = m.home_team.c_str();
+        let home_stats_opt = stats_map.get(home_name);
+        let home_stats: TeamStats*;
+        
+        if (home_stats_opt.is_none()) {
+            let pts = (TeamStats*)malloc(sizeof(TeamStats));
+            *pts = TeamStats::new(m.home_team.clone());
+            home_stats = pts;
+            stats_map.put(home_name, TeamStatsRef { ptr: pts });
+        } else {
+            home_stats = home_stats_opt.unwrap().ptr;
+        }
+        
+        // Process Away Team
+        let away_name = m.away_team.c_str();
+        let away_stats_opt = stats_map.get(away_name);
+        let away_stats: TeamStats*;
+        
+        if (away_stats_opt.is_none()) {
+            let pts = (TeamStats*)malloc(sizeof(TeamStats));
+            *pts = TeamStats::new(m.away_team.clone());
+            away_stats = pts;
+            stats_map.put(away_name, TeamStatsRef { ptr: pts });
+        } else {
+            away_stats = away_stats_opt.unwrap().ptr;
+        }
+        
+        // Update stats
+        home_stats.played = home_stats.played + 1;
+        away_stats.played = away_stats.played + 1;
+        home_stats.goals_for = home_stats.goals_for + m.home_goals;
+        home_stats.goals_against = home_stats.goals_against + m.away_goals;
+        away_stats.goals_for = away_stats.goals_for + m.away_goals;
+        away_stats.goals_against = away_stats.goals_against + m.home_goals;
+        
+        if (m.result == 'H') {
+            home_stats.points = home_stats.points + 3;
+        } else if (m.result == 'A') {
+            away_stats.points = away_stats.points + 3;
+        } else {
+            home_stats.points = home_stats.points + 1;
+            away_stats.points = away_stats.points + 1;
+        }
+    }
+    
+    return stats_map;
 }

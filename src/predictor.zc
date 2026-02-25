@@ -1,30 +1,53 @@
-import "std/core.zc"
+import "libs/std.zc"
 import "src/data_loader.zc"
 
 struct Prediction {
-    home_team: *char;
-    away_team: *char;
+    home_team: String;
+    away_team: String;
     prob_1: float;
     prob_x: float;
     prob_2: float;
     forecast: char; // '1', 'X', '2'
 }
 
-fn predict_match(home: TeamStats, away: TeamStats) -> Prediction {
-    let pred = Prediction {
-        home_team: home.name,
-        away_team: away.name,
-        prob_1: 0.45, // Placeholder probabilistic logic
-        prob_x: 0.30,
-        prob_2: 0.25,
-        forecast: '1'
-    };
+impl Prediction {
+    fn forget(self) {
+        self.home_team.forget();
+        self.away_team.forget();
+    }
+}
+
+fn predict_match(home: TeamStats*, away: TeamStats*) -> Prediction {
+    let home_atk = (float)home.goals_for / (float)home.played;
+    let home_def = (float)home.goals_against / (float)home.played;
+    let away_atk = (float)away.goals_for / (float)away.played;
+    let away_def = (float)away.goals_against / (float)away.played;
     
-    // Logic: If home attack > away defense, increase prob_1
-    // For now, simpler: compare points
-    if (home.points > away.points) {
+    // Simplistic strength: atk / opponent_def
+    let home_strength = home_atk + away_def;
+    let away_strength = away_atk + home_def;
+    
+    // Add home advantage
+    home_strength = home_strength + 0.3;
+    
+    let total = home_strength + away_strength + 1.0; // 1.0 for draw weight
+    
+    let p1 = home_strength / total;
+    let p2 = away_strength / total;
+    let px = 1.0 - p1 - p2;
+
+    let pred = Prediction {
+        home_team: home.name.clone(),
+        away_team: away.name.clone(),
+        prob_1: p1,
+        prob_x: px,
+        prob_2: p2,
+        forecast: 'X'
+    };
+
+    if (p1 > p2 && p1 > px) {
         pred.forecast = '1';
-    } else if (home.points < away.points) {
+    } else if (p2 > p1 && p2 > px) {
         pred.forecast = '2';
     } else {
         pred.forecast = 'X';

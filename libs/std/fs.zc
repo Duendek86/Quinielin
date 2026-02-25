@@ -1,0 +1,236 @@
+import "./core.zc"
+import "./result.zc"
+import "./string.zc"
+import "./vec.zc"
+import "./mem.zc"
+import "sys/fs.zc"
+
+def Z_SEEK_SET = 0;
+def Z_SEEK_END = 2;
+def Z_F_OK = 0;
+
+// Direct externs for simple functions with const char* parameters
+extern fn access(pathname: const char*, mode: c_int) -> c_int;
+extern fn unlink(pathname: const char*) -> c_int;
+extern fn rmdir(pathname: const char*) -> c_int;
+extern fn malloc(size: usize) -> void*;
+extern fn free(ptr: void*);
+
+extern fn _z_fs_mkdir(path: const char*) -> c_int;
+extern fn _z_fs_get_metadata(path: const char*, size: U64*, is_dir: c_int*, is_file: c_int*) -> c_int;
+extern fn _z_fs_read_entry(dir: void*, out_name: char*, buf_size: c_int, is_dir: c_int*) -> c_int;
+extern fn _z_fs_fopen(path: const char*, mode: const char*) -> void*;
+extern fn _z_fs_fclose(stream: void*) -> c_int;
+extern fn _z_fs_fread(ptr: void*, size: usize, nmemb: usize, stream: void*) -> usize;
+extern fn _z_fs_fwrite(ptr: void*, size: usize, nmemb: usize, stream: void*) -> usize;
+extern fn _z_fs_fseek(stream: void*, offset: I64, whence: c_int) -> c_int;
+extern fn _z_fs_ftell(stream: void*) -> I64;
+extern fn _z_fs_getcwd(buf: char*, size: usize) -> char*;
+extern fn _z_fs_opendir(name: const char*) -> void*;
+extern fn _z_fs_closedir(dir: void*) -> c_int;
+
+
+struct File {
+    handle: void*;
+}
+
+struct Metadata {
+    size: U64;
+    is_dir: bool;
+    is_file: bool;
+}
+
+struct DirEntry {
+    name: String;
+    is_dir: bool;
+}
+
+impl File {
+    fn open(path: char*, mode: char*) -> Result<File> {
+        let h = _z_fs_fopen(path, mode);
+        if (h == NULL) {
+            return Result<File>::Err("Failed to open file");
+        }
+        return Result<File>::Ok(File { handle: h });
+    }
+
+    fn close(self) {
+        if (self.handle) {
+            _z_fs_fclose(self.handle);
+            self.handle = NULL;
+        }
+    }
+
+    fn read_to_string(self) -> Result<String> {
+        if (self.handle == NULL) {
+            return Result<String>::Err("File not open");
+        }
+        
+        _z_fs_fseek(self.handle, 0, Z_SEEK_END);
+        let size = _z_fs_ftell(self.handle);
+        _z_fs_fseek(self.handle, 0, Z_SEEK_SET);
+        
+        let buffer: char* = malloc((usize)size + 1);
+        if (buffer == NULL) {
+            return Result<String>::Err("Out of memory");
+        }
+        
+        let read = _z_fs_fread(buffer, 1, size, self.handle);
+        buffer[read] = 0;
+        
+        let s = String::new(buffer);
+        free(buffer);
+        
+        let res = Result<String>::Ok(s);
+        s.forget();
+        
+        let ret = res;
+        res.forget();
+        return ret;
+    }
+
+    fn read_all(path: char*) -> Result<String> {
+        let res = File::open(path, "rb");
+        if (res.is_err()) {
+            return Result<String>::Err(res.err);
+        }
+        
+        let f: File = res.unwrap();
+        let s_res = f.read_to_string();
+        f.close();
+        
+        let ret = s_res;
+        s_res.forget();
+        return ret;
+    }
+
+    fn write_string(self, content: char*) -> Result<bool> {
+        if (self.handle == NULL) {
+            return Result<bool>::Err("File not open");
+        }
+        
+        let len = strlen(content);
+        let written = _z_fs_fwrite(content, 1, len, self.handle);
+        if (written != len) {
+            return Result<bool>::Err("Write incomplete");
+        }
+        return Result<bool>::Ok(true);
+    }
+
+    fn exists(path: char*) -> bool {
+        let zero: c_int = 0;
+        return access(path, Z_F_OK) == zero;
+    }
+
+    fn metadata(path: char*) -> Result<Metadata> {
+        let size: uint64_t;
+        let is_d: c_int;
+        let is_f: c_int;
+        
+        let res = _z_fs_get_metadata(path, &size, &is_d, &is_f);
+        let non_zero: c_int = 0;
+        if (res != non_zero) {
+            return Result<Metadata>::Err("Failed to get metadata");
+        }
+        
+        return Result<Metadata>::Ok(Metadata { 
+            size: (U64)size, 
+            is_dir: is_d != non_zero, 
+            is_file: is_f != non_zero 
+        });
+    }
+
+    fn create_dir(path: char*) -> Result<bool> {
+        let res = _z_fs_mkdir(path);
+        let zero: c_int = 0;
+        if (res != zero) {
+            return Result<bool>::Err("Failed to create directory");
+        }
+        return Result<bool>::Ok(true);
+    }
+
+    fn remove_file(path: char*) -> Result<bool> {
+        let res = unlink(path);
+        let zero: c_int = 0;
+        if (res != zero) {
+            return Result<bool>::Err("Failed to remove file");
+        }
+        return Result<bool>::Ok(true);
+    }
+
+    fn remove_dir(path: char*) -> Result<bool> {
+        let res = rmdir(path);
+        let zero: c_int = 0;
+        if (res != zero) {
+            return Result<bool>::Err("Failed to remove directory");
+        }
+        return Result<bool>::Ok(true);
+    }
+
+    fn read_dir(path: char*) -> Result< Vec<DirEntry> > {
+        let dir = _z_fs_opendir(path);
+        if (dir == NULL) {
+            return Result< Vec<DirEntry> >::Err("Failed to open directory");
+        }
+        
+        let entries = Vec<DirEntry>::new();
+        let name_buf: char* = malloc(256);
+        
+        if (name_buf == NULL) {
+            _z_fs_closedir(dir);
+            return Result< Vec<DirEntry> >::Err("Out of memory");
+        }
+        
+        let is_d: c_int = 0;
+        
+        let is_d_zero: c_int = 0;
+        while (_z_fs_read_entry(dir, name_buf, 256, &is_d)) {
+            let zero_cmp: c_int = 0;
+            if (strcmp(name_buf, ".") == zero_cmp || strcmp(name_buf, "..") == zero_cmp) {
+                continue;
+            }
+            
+            let s = String::new(name_buf);
+            let ent = DirEntry {
+                name: s,
+                is_dir: is_d != is_d_zero
+            };
+            
+            // Transfer ownership: String -> DirEntry
+            s.forget();
+            
+            entries.push(ent);
+            
+            // Transfer ownership: DirEntry -> Vec
+            ent.name.forget();
+        }
+        
+        free(name_buf);
+        _z_fs_closedir(dir);
+        
+        let res = Result< Vec<DirEntry> >::Ok(entries);
+        entries.forget();
+        let ret = res;
+        res.forget();
+        return ret;
+    }
+
+    fn current_dir() -> Result<String> {
+        let buf: char* = malloc(1024);
+        if (buf == NULL) return Result<String>::Err("Out of memory");
+        
+        if (_z_fs_getcwd(buf, 1024) == NULL) {
+            free(buf);
+            return Result<String>::Err("Failed to get current directory");
+        }
+        
+        let s = String::new(buf);
+        free(buf);
+        let res = Result<String>::Ok(s);
+        s.forget();
+        let ret = res;
+        res.forget();
+        return ret;
+    }
+}
+}

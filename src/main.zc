@@ -1,26 +1,152 @@
 //> include: ./src
+//> include: ./libs/std/third-party/tre/include
 //> link: -lm
 
-import "std/core.zc"
-import "std/fs.zc"
+import "libs/std.zc"
+import "src/predictor.zc"
 import "src/downloader.zc"
 
-fn main(argc: int, argv: **char) -> int {
+fn main(argc: int, argv: char**) -> int {
     printf("Bienvenido a Quinielin - Generador de apuestas para La Liga\n");
     
-    // Comprobar si es necesario descargar datos por primera vez
-    if (!fs::exists("data") || fs::is_empty("data")) {
-        fs::mkdir("data");
-        printf("Detectada primera ejecución. Descargando base de datos histórica...\n");
-        download_all_data();
-    } else if (argc > 1 && strcmp(argv[1], "--download") == 0) {
-        printf("Actualizando última temporada...\n");
-        download_season_data("https://datahub.io/core/spanish-la-liga/_r/-/season-2425.csv", "data/season-2425.csv");
+    if (!File::exists("data")) {
+        File::create_dir("data");
+    }
+    
+    // Descargar ficheros faltantes si es necesario
+    download_all_data();
+
+    if (argc > 1 && strcmp(argv[1], "--download") == 0) {
+        printf("Forzando actualización de la última temporada...\n");
+        
+        let sp1_path = "data/season-2526-SP1.csv";
+        let sp2_path = "data/season-2526-SP2.csv";
+        if (File::exists(sp1_path)) {
+            let del_cmd: char[256];
+            sprintf(del_cmd, "del /Q %s", sp1_path);
+            system(del_cmd);
+        }
+        if (File::exists(sp2_path)) {
+            let del_cmd: char[256];
+            sprintf(del_cmd, "del /Q %s", sp2_path);
+            system(del_cmd);
+        }
+        download_season_data("https://www.football-data.co.uk/mmz4281/2526/SP1.csv", sp1_path);
+        download_season_data("https://www.football-data.co.uk/mmz4281/2526/SP2.csv", sp2_path);
         return 0;
     }
 
-    printf("Cargando estadísticas...\n");
-    // TODO: Implementar carga de datos y lógica de predicción
+    printf("Cargando datos de temporadas pasadas...\n");
+    let seasons = [
+        "9394", "9495", "9596", "9697", "9798", "9899", "9900",
+        "0001", "0102", "0203", "0304", "0405", "0506", "0607", "0708", "0809", "0910",
+        "1011", "1112", "1213", "1314", "1415", "1516", "1617", "1718", "1819", "1920",
+        "2122", "2223", "2324", "2425", "2526"
+    ];
+    let leagues = ["SP1", "SP2"];
+    
+    let all_matches = Vec<FootballMatch>::new();
+    for (let i = 0; i < 32; i++) {
+        for (let j = 0; j < 2; j++) {
+            let file_buf: char[256];
+            sprintf(file_buf, "data/season-%s-%s.csv", seasons[i], leagues[j]);
+            let s_matches = parse_csv(file_buf);
+            if (s_matches.len > 0) {
+                printf("Temporada %s %s: %d partidos cargados\n", seasons[i], leagues[j], s_matches.len);
+            }
+            all_matches.append(s_matches);
+        }
+    }
+
+    if (all_matches.len > 0) {
+        let last_m = all_matches.get(all_matches.len - 1);
+        printf("Fecha del ultimo partido registrado: %s\n", last_m.date.c_str());
+    }
+
+    // Calcular estadísticas reales
+    let stats_map = calculate_stats(all_matches);
+    printf("Estadísticas procesadas para %d equipos.\n", stats_map.len);
+    
+    // Leer partidos de la Quiniela desde data/quiniela.json
+    let quiniela_res = File::read_all("data/quiniela.json");
+    if (quiniela_res.is_err()) {
+        printf("\nNo se encontró data/quiniela.json.\n");
+        printf("Ejecuta 'python src/scrap.py' para obtener los partidos de la Quiniela.\n");
+    } else {
+        let quiniela_content = quiniela_res.unwrap();
+        let q_lines = quiniela_content.split('\n');
+        
+        printf("\n========================================\n");
+        printf("       QUINIELA - PREDICCIONES\n");
+        printf("========================================\n\n");
+        printf("  # | %-20s | %-20s | 1     X     2   | PRO\n", "LOCAL", "VISITANTE");
+        printf("----+----------------------+----------------------+-----------------+----\n");
+        
+        let match_num = 0;
+        let local_name = String::from("");
+        let visit_name = String::from("");
+        
+        for (let i = 0; i < q_lines.len; i = i + 1) {
+            let line = q_lines.get(i).trim();
+            
+            // Buscar "local_mapped": "nombre"
+            if (strstr(line.c_str(), "\"local_mapped\"") != NULL) {
+                let parts = line.split(':');
+                if (parts.len >= 2) {
+                    let val = parts.get(1).trim();
+                    // Quitar comillas y coma final
+                    let no_quotes = val.replace("\"", "");
+                    let no_comma = no_quotes.replace(",", "");
+                    local_name.free();
+                    local_name = no_comma.trim();
+                    no_quotes.free();
+                    no_comma.free();
+                }
+            }
+            
+            // Buscar "visitante_mapped": "nombre"
+            if (strstr(line.c_str(), "\"visitante_mapped\"") != NULL) {
+                let parts = line.split(':');
+                if (parts.len >= 2) {
+                    let val = parts.get(1).trim();
+                    let no_quotes = val.replace("\"", "");
+                    let no_comma = no_quotes.replace(",", "");
+                    visit_name.free();
+                    visit_name = no_comma.trim();
+                    no_quotes.free();
+                    no_comma.free();
+                }
+                
+                match_num = match_num + 1;
+                
+                let h_opt = stats_map.get(local_name.c_str());
+                let a_opt = stats_map.get(visit_name.c_str());
+                
+                if (h_opt.is_some() && a_opt.is_some()) {
+                    let home = h_opt.unwrap().ptr;
+                    let away = a_opt.unwrap().ptr;
+                    
+                    let p = predict_match(home, away);
+                    printf(" %2d | %-20s | %-20s | %.0f%%  %.0f%%  %.0f%% | %c\n",
+                           match_num,
+                           local_name.c_str(), visit_name.c_str(),
+                           p.prob_1 * 100.0, p.prob_x * 100.0, p.prob_2 * 100.0,
+                           p.forecast);
+                } else {
+                    printf(" %2d | %-20s | %-20s | ---  ---  --- | ?\n",
+                           match_num,
+                           local_name.c_str(), visit_name.c_str());
+                }
+            }
+        }
+        
+        printf("\n========================================\n");
+        local_name.free();
+        visit_name.free();
+        quiniela_content.free();
+    }
+
+    printf("\nQuinielin ha finalizado con éxito.\n");
     
     return 0;
 }

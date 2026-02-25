@@ -1,6 +1,6 @@
 @echo off
-set ZC_ROOT=C:\Users\mende\Documents\Zen-C
-set ZC=C:\Users\mende\Documents\zc.com
+set ZC_ROOT=C:\Users\Ramon\Documents\Zen-C
+set ZC=C:\Users\Ramon\Documents\zc.exe
 if not exist bin mkdir bin
 %ZC% build src/main.zc -o bin/quinielin.exe
 if %ERRORLEVEL% EQU 0 (

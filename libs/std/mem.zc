@@ -1,0 +1,66 @@
+
+fn alloc<T>() -> T* {
+    return (T*)malloc(sizeof(T));
+}
+
+fn zalloc<T>() -> T* {
+    return (T*)calloc(1, sizeof(T));
+}
+
+fn alloc_n<T>(n: usize) -> T* {
+    return (T*)malloc(sizeof(T) * n);
+}
+
+trait Drop {
+    fn drop(self);
+}
+
+trait Copy {}
+
+trait Clone {
+    fn clone(self) -> Self;
+}
+
+struct Box<T> {
+    ptr: T*;
+}
+
+impl Box<T> {
+    fn new() -> Self {
+        return Self { ptr: calloc(1, sizeof(T)) };
+    }
+    
+    fn from_ptr(p: T*) -> Self {
+        return Self { ptr: p };
+    }
+    
+    fn get(self) -> T* {
+        return self.ptr;
+    }
+    
+    fn is_null(self) -> bool {
+        return self.ptr == NULL;
+    }
+    
+    fn free(self) {
+        if self.ptr != NULL {
+            free(self.ptr);
+        }
+    }
+}
+
+// Note: Slice<T> is defined in std/slice.zc with iteration support
+
+fn mem_zero<T>(ptr: T*, count: usize) {
+    memset(ptr, 0, sizeof(T) * count);
+}
+
+fn mem_copy<T>(dst: T*, src: T*, count: usize) {
+    memcpy(dst, src, sizeof(T) * count);
+}
+
+fn swap<T>(a: T*, b: T*) {
+    let tmp = *a;
+    *a = *b;
+    *b = tmp;
+}

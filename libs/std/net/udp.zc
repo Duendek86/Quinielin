@@ -1,0 +1,72 @@
+
+import "../core.zc"
+import "../result.zc"
+import "../string.zc"
+import "./socket.zc"
+
+struct UdpSocket {
+    handle: isize;
+}
+
+struct UdpRecvResult {
+    n: usize;
+    host: String;
+    port: c_int;
+}
+
+impl UdpSocket {
+    fn bind(host: char*, port: c_int) -> Result<UdpSocket> {
+        let zero: c_int = 0;
+        let fd = _z_socket(Z_AF_INET, Z_SOCK_DGRAM, zero);
+        if (fd < 0) return Result<UdpSocket>::Err("Failed to create socket"); // 0 is valid isize, but socket returns -1 on error
+        
+        let res = _z_net_bind_udp(fd, host, port);
+        let neg_one: c_int = -1;
+        let neg_two: c_int = -2;
+        
+        if (res == neg_one) { _z_close(fd); return Result<UdpSocket>::Err("Invalid address"); }
+        if (res == neg_two) { _z_close(fd); return Result<UdpSocket>::Err("Bind failed"); }
+        
+        let one: isize = 1;
+        return Result<UdpSocket>::Ok(UdpSocket { handle: fd + one });
+    }
+
+    fn recv_from(self, buf: char*, len: usize) -> Result<UdpRecvResult> {
+        let host_buf: char[64];
+        let port: c_int = 0;
+        
+        let zero: c_int = 0;
+        let one: c_int = 1;
+        
+        let n = _z_net_recvfrom(self.handle - one, buf, len, &host_buf[0], &port);
+        
+        if (n < 0) return Result<UdpRecvResult>::Err("Recv failed");
+        
+        // Convert host_buf to String
+        let s = String::new(&host_buf[0]);
+        
+        return Result<UdpRecvResult>::Ok(UdpRecvResult { n: (usize)n, host: s, port: port });
+    }
+    
+    fn send_to(self, buf: char*, len: usize, host: char*, port: c_int) -> Result<usize> {
+        let one: isize = 1;
+        let n = _z_net_sendto(self.handle - one, buf, len, host, port);
+        if (n < 0) return Result<usize>::Err("Send failed");
+        return Result<usize>::Ok((usize)n);
+    }
+
+    fn close(self) {
+        let zero: c_int = 0;
+        if (self.handle > zero) {
+            let one: isize = 1;
+            _z_close(self.handle - one);
+            self.handle = 0;
+        }
+    }
+}
+
+impl Drop for UdpSocket {
+    fn drop(self) {
+        self.close();
+    }
+}

@@ -1,0 +1,356 @@
+import "./core.zc"
+import "./vec.zc"
+import "./option.zc"
+
+struct String {
+    vec: Vec<char>;
+}
+
+impl String {
+    fn new(s: char*) -> String {
+        let len = strlen(s);
+        let v = Vec<char>::new();
+        // Manual copy for now
+        for (let i = 0; i < len; i = i + 1) {
+            v.push(s[i]);
+        }
+        v.push(0);
+        
+        // Extract fields to transfer ownership
+        let d = v.data;
+        let l = v.len;
+        let c = v.cap;
+        
+        // Forget the local vector so it doesn't free the memory
+        v.forget();
+        
+        return String { vec: Vec<char> { data: d, len: l, cap: c } };
+    }
+
+    fn from(s: char*) -> String {
+        return String::new(s);
+    }
+
+    fn clone(self) -> String {
+        return String::new(self.c_str());
+    }
+
+    fn c_str(self) -> char* {
+        return self.vec.data;
+    }
+
+    fn destroy(self) {
+        self.vec.free();
+    }
+
+    fn forget(self) {
+        self.vec.forget();
+    }
+    
+    fn append(self, other: String*) {
+        // Remove null terminator before appending
+        if (self.vec.len > 0) {
+            self.vec.len = self.vec.len - 1;
+        }
+        
+        let other_len = (*other).vec.len;
+        for (let i = 0; i < other_len; i = i + 1) {
+            self.vec.push((*other).vec.get(i));
+        }
+    }
+
+    fn append_c(self, s: char*) {
+        if (self.vec.len > 0) {
+            self.vec.len = self.vec.len - 1;
+        }
+        let len = strlen(s);
+        for (let i = 0; i < len; i = i + 1) {
+            self.vec.push(s[i]);
+        }
+        self.vec.push(0);
+    }
+
+    fn append_c_ptr(ptr: String*, s: char*) {
+        if (ptr.vec.len > 0) {
+            ptr.vec.len = ptr.vec.len - 1;
+        }
+        let len = strlen(s);
+        for (let i = 0; i < len; i = i + 1) {
+            ptr.vec.push(s[i]);
+        }
+        ptr.vec.push(0);
+    }
+
+    fn add(self, other: String*) -> String {
+        let new_s = String::from(self.c_str());
+        new_s.append(other);
+        
+        let d = new_s.vec.data;
+        let l = new_s.vec.len;
+        let c = new_s.vec.cap;
+        new_s.forget();
+        
+        return String { vec: Vec<char> { data: d, len: l, cap: c } };
+    }
+
+    fn eq(self, other: String*) -> bool {
+        let zero: c_int = 0;
+        return strcmp(self.c_str(), (*other).c_str()) == zero;
+    }
+
+    fn eq_str(self, s: char*) -> bool {
+        let zero: c_int = 0;
+        return strcmp(self.c_str(), s) == zero;
+    }
+
+    fn length(self) -> usize {
+        if (self.vec.len == 0) { return 0; }
+        return self.vec.len - 1;
+    }
+    
+    fn substring(self, start: usize, len: usize) -> String {
+        if (start + len > self.length()) {
+            panic("substring out of bounds");
+        }
+        let v = Vec<char>::new();
+        for (let i: usize = 0; i < len; i = i + 1) {
+             v.push(self.vec.get(start + i));
+        }
+        v.push(0);
+        
+        let d = v.data;
+        let l = v.len;
+        let c = v.cap;
+        v.forget();
+        
+        return String { vec: Vec<char> { data: d, len: l, cap: c } };
+    }
+
+    fn find(self, target: char) -> Option<usize> {
+        let len = self.length();
+        for (let i: usize = 0; i < len; i = i + 1) {
+            if (self.vec.get(i) == target) {
+                return Option<usize>::Some(i);
+            }
+        }
+        return Option<usize>::None();
+    }
+
+    fn print(self) {
+        printf("%s", self.c_str());
+        fflush(stdout);
+    }
+
+    fn println(self) {
+        printf("%s\n", self.c_str());
+    }
+    
+    fn is_empty(self) -> bool {
+        return self.length() == 0;
+    }
+    
+    fn contains(self, target: char) -> bool {
+        return self.find(target).is_some();
+    }
+    
+    fn starts_with(self, prefix: char*) -> bool {
+        let plen = strlen(prefix);
+        if plen > self.length() { return false; }
+        let zero: c_int = 0;
+        return strncmp(self.c_str(), prefix, plen) == zero;
+    }
+    
+    fn ends_with(self, suffix: char*) -> bool {
+        let slen = strlen(suffix);
+        let len = self.length();
+        if slen > len { return false; }
+        let offset = (int)(len - slen);
+        let zero: c_int = 0;
+        return strcmp(self.c_str() + offset, suffix) == zero;
+    }
+    
+    fn reserve(self, cap: usize) {
+        self.vec.grow_to_fit(cap + 1);
+    }
+
+    fn free(self) {
+        self.vec.free();
+    }
+
+    fn _utf8_seq_len(first_byte: char) -> usize {
+        let b = (int)first_byte;
+        if ((b & 0x80) == 0) { return 1; }
+        if ((b & 0xE0) == 0xC0) { return 2; }
+        if ((b & 0xF0) == 0xE0) { return 3; }
+        if ((b & 0xF8) == 0xF0) { return 4; }
+        return 1; // Fallback
+    }
+
+    fn utf8_len(self) -> usize {
+        let count: usize = 0;
+        let i: usize = 0;
+        let len = self.length();
+        while i < len {
+            let c = self.vec.get(i);
+            i = i + String::_utf8_seq_len(c);
+            count = count + 1;
+        }
+        return count;
+    }
+
+    fn utf8_at(self, idx: usize) -> String {
+        let count: usize = 0;
+        let i: usize = 0;
+        let len = self.length();
+        while i < len {
+            let c = self.vec.get(i);
+            let seq = String::_utf8_seq_len(c);
+            
+            if (count == idx) {
+                return self.substring(i, seq);
+            }
+            
+            i = i + seq;
+            count = count + 1;
+        }
+        return String::new("");
+    }
+
+    fn utf8_substr(self, start_idx: usize, num_chars: usize) -> String {
+        if (num_chars == 0) { return String::new(""); }
+
+        let byte_start: usize = 0;
+        let byte_len: usize = 0;
+        
+        let count: usize = 0;
+        let i: usize = 0;
+        let len = self.length();
+        let found_start = false;
+        
+        while i < len {
+            // Check if we reached the start char
+            if (!found_start && count == start_idx) {
+                byte_start = i;
+                found_start = true;
+                // Reset count to track chars collected
+                count = 0; 
+            } else if (!found_start) {
+                 // Still seeking start
+                 let c = self.vec.get(i);
+                 i = i + String::_utf8_seq_len(c);
+                 count = count + 1;
+                 continue;
+            }
+            
+            // If we are here, we are collecting chars
+            if (count < num_chars) {
+                let c = self.vec.get(i);
+                let seq = String::_utf8_seq_len(c);
+                byte_len = byte_len + seq;
+                i = i + seq;
+                count = count + 1;
+            } else {
+                break;
+            }
+        }
+        
+        if (!found_start) { return String::new(""); }
+        
+        return self.substring(byte_start, byte_len);
+    }
+    fn split(self, delim: char) -> Vec<String> {
+        let parts = Vec<String>::new();
+        let len = self.length();
+        if (len == 0) { return parts; }
+
+        let start: usize = 0;
+        let i: usize = 0;
+        
+        while i < len {
+            if (self.vec.get(i) == delim) {
+                // Found delimiter
+                parts.push(self.substring(start, i - start));
+                start = i + 1;
+            }
+            i = i + 1;
+        }
+        
+        // Push last segment
+        if (start <= len) {
+            parts.push(self.substring(start, len - start));
+        }
+        
+        return parts;
+    }
+
+    fn trim(self) -> String {
+        let start: usize = 0;
+        let len = self.length();
+        let end = len;
+
+        // Find start
+        while (start < len) {
+            let c = self.vec.get(start);
+            if (c != ' ' && c != '\t' && c != '\n' && c != '\r') {
+                break;
+            }
+            start = start + 1;
+        }
+
+        if (start == len) {
+            return String::new("");
+        }
+
+        // Find end
+        while (end > start) {
+            let c = self.vec.get(end - 1);
+            if (c != ' ' && c != '\t' && c != '\n' && c != '\r') {
+                break;
+            }
+            end = end - 1;
+        }
+
+        return self.substring(start, end - start);
+    }
+    
+    fn replace(self, target: char*, replacement: char*) -> String {
+        let t_len = strlen(target);
+        if (t_len == 0) return self.substring(0, self.length()); // clone
+        
+
+        let s_len = self.length();
+        let result = String::new("");
+        
+        let i: usize = 0;
+        while (i < s_len) {
+            // Check if match
+            if (i + t_len <= s_len) {
+                let is_match = true;
+                // Manual strncmp against vec data
+                for (let k: usize = 0; k < t_len; k = k + 1) {
+                    if (self.vec.get(i + k) != target[k]) {
+                        is_match = false;
+                        break;
+                    }
+                }
+                
+                if (is_match) {
+                    let r_str = String::new(replacement);
+                    result.append(&r_str);
+                    i = i + t_len;
+                    continue;
+                }
+            }
+            
+            // Append single char
+            let v = Vec<char>::new();
+            v.push(self.vec.get(i));
+            v.push(0);
+            let ch_s = String::new(v.data);
+            result.append(&ch_s);
+            v.free();
+            i = i + 1;
+        }
+        return result;
+    }
+}

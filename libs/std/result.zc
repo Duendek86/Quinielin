@@ -1,0 +1,58 @@
+import "./core.zc"
+
+struct Result<T> {
+    is_ok: bool;
+    val: T;
+    err: char*;
+}
+
+impl Result<T> {
+    fn Ok(v: T) -> Result<T> {
+        return Result<T> { is_ok: true, val: v, err: 0 };
+    }
+
+    fn Err(e: char*) -> Result<T> {
+        return Result<T> { is_ok: false, val: 0, err: e };
+    }
+
+    fn is_ok(self) -> bool {
+        return self.is_ok;
+    }
+    
+    fn is_err(self) -> bool {
+        return !self.is_ok;
+    }
+
+    fn forget(self) {
+        memset(&self.val, 0, sizeof(T));
+    }
+
+    fn unwrap(self) -> T {
+        if (!self.is_ok) {
+            let e = self.err;
+            !"Panic: unwrap called on Err: {e}";
+            exit(1);
+        }
+        let v = self.val;
+        memset(&self.val, 0, sizeof(T));
+        return v;
+    }
+
+    fn unwrap_ref(self) -> T* {
+        if (!self.is_ok) {
+            let e = self.err;
+            !"Panic: unwrap_ref called on Err: {e}";
+            exit(1);
+        }
+        return &self.val;
+    }
+
+    fn expect(self, msg: char*) -> T {
+        if (!self.is_ok) {
+            let e = self.err;
+            !"Panic: {msg}: {e}";
+            exit(1);
+        }
+        return self.val;
+    }
+}

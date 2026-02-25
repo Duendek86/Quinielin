@@ -1,0 +1,64 @@
+import "./core.zc"
+
+include <time.h>
+include <unistd.h>
+include <sys/time.h>
+include <stdlib.h>
+
+// Minimal raw block: required because gettimeofday() uses struct timeval
+// which can't be declared in Zen-C without type conflicts, and time()
+// has conflicting type signature (time_t* vs void*)
+raw {
+    static uint64_t _time_now_impl(void) {
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        return (uint64_t)(tv.tv_sec) * 1000 + (uint64_t)(tv.tv_usec) / 1000;
+    }
+
+    static int64_t _z_time_time(void) {
+        return (int64_t)time(NULL);
+    }
+}
+
+extern fn srand(seed: U32);
+extern fn rand() -> int;
+extern fn usleep(micros: U32) -> int;
+extern fn _time_now_impl() -> U64;
+extern fn _z_time_time() -> I64;
+
+struct Duration {
+    millis: U64;
+}
+
+impl Duration {
+    fn from_ms(ms: U64) -> Duration {
+        return Duration { millis: ms };
+    }
+    
+    fn from_secs(s: U64) -> Duration {
+        return Duration { millis: s * (U64)1000 };
+    }
+}
+
+struct Time {}
+
+extern size_t __zen_hash_seed;
+
+impl Time {
+    fn randomize_hash() {
+        srand((U32)_z_time_time());
+        __zen_hash_seed ^= (size_t)rand();
+    }
+
+    fn now() -> U64 {
+        return _time_now_impl();
+    }
+    
+    fn sleep(d: Duration) {
+        usleep((U32)(d.millis * (U64)1000));
+    }
+    
+    fn sleep_ms(ms: U64) {
+        usleep((U32)(ms * (U64)1000));
+    }
+}

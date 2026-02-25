@@ -1,0 +1,186 @@
+
+raw {
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
+typedef int socklen_t;
+#include <stdint.h>
+typedef intptr_t ssize_t;
+#else
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <unistd.h>
+#include <errno.h>
+#endif
+}
+
+import "../core.zc"
+
+raw {
+#ifdef _WIN32
+    int _z_net_initialized = 0;
+    void _z_net_ensure_init(void) {
+        if (!_z_net_initialized) {
+            WSADATA wsaData;
+            WSAStartup(MAKEWORD(2, 2), &wsaData);
+            _z_net_initialized = 1;
+        }
+    }
+#else
+    void _z_net_ensure_init(void) {}
+#endif
+
+    static ssize_t _z_socket(int domain, int type, int proto) {
+#ifdef _WIN32
+        _z_net_ensure_init();
+        return (ssize_t)socket(domain, type, proto);
+#else
+        return socket(domain, type, proto);
+#endif
+    }
+
+    static int _z_close(ssize_t fd) {
+#ifdef _WIN32
+        return closesocket((SOCKET)fd);
+#else
+        return close((int)fd);
+#endif
+    }
+
+    static ssize_t _z_read(ssize_t fd, void *buf, size_t count) {
+#ifdef _WIN32
+        return recv((SOCKET)fd, (char*)buf, (int)count, 0);
+#else
+        return read((int)fd, buf, count);
+#endif
+    }
+
+    static int _z_net_bind(ssize_t fd, const char *host, int port) {
+        struct sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+        if (inet_pton(AF_INET, host, &addr.sin_addr) <= 0) return -1;
+        
+        int opt = 1;
+#ifdef _WIN32
+        setsockopt((SOCKET)fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
+        if (bind((SOCKET)fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) return -2;
+        if (listen((SOCKET)fd, 10) < 0) return -3;
+#else
+        setsockopt((int)fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+        if (bind((int)fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) return -2;
+        if (listen((int)fd, 10) < 0) return -3;
+#endif
+        return 0;
+    }
+
+    static int _z_net_bind_udp(ssize_t fd, const char *host, int port) {
+        struct sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+        if (inet_pton(AF_INET, host, &addr.sin_addr) <= 0) return -1;
+        
+        int opt = 1;
+#ifdef _WIN32
+        setsockopt((SOCKET)fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
+        if (bind((SOCKET)fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) return -2;
+#else
+        setsockopt((int)fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+        if (bind((int)fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) return -2;
+#endif
+        return 0;
+    }
+
+    static int _z_net_connect(ssize_t fd, const char *host, int port) {
+        struct sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+        if (inet_pton(AF_INET, host, &addr.sin_addr) <= 0) return -1; 
+        
+#ifdef _WIN32
+        if (connect((SOCKET)fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) return -2;
+#else
+        if (connect((int)fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) return -2;
+#endif
+        return 0;
+    }
+
+    static ssize_t _z_net_accept(ssize_t fd) {
+#ifdef _WIN32
+        return (ssize_t)accept((SOCKET)fd, NULL, NULL);
+#else
+        return accept((int)fd, NULL, NULL);
+#endif
+    }
+
+    static ssize_t _z_net_write(ssize_t fd, const char* buf, size_t n) {
+#ifdef _WIN32
+        return send((SOCKET)fd, buf, (int)n, 0);
+#else
+        return write((int)fd, (const void*)buf, n);
+#endif
+    }
+
+    static ssize_t _z_net_recvfrom(ssize_t fd, char *buf, size_t len, char *host_out, int *port_out) {
+        struct sockaddr_in addr;
+        socklen_t addr_len = sizeof(addr);
+#ifdef _WIN32
+        ssize_t n = recvfrom((SOCKET)fd, buf, (int)len, 0, (struct sockaddr *)&addr, &addr_len);
+#else
+        ssize_t n = recvfrom((int)fd, buf, len, 0, (struct sockaddr *)&addr, &addr_len);
+#endif
+        if (n >= 0 && host_out != NULL && port_out != NULL) {
+            inet_ntop(AF_INET, &addr.sin_addr, host_out, INET_ADDRSTRLEN);
+            *port_out = ntohs(addr.sin_port);
+        }
+        return n;
+    }
+
+    static ssize_t _z_net_sendto(ssize_t fd, const char *buf, size_t len, const char *host, int port) {
+        struct sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+        if (inet_pton(AF_INET, host, &addr.sin_addr) <= 0) return -1;
+        
+#ifdef _WIN32
+        return sendto((SOCKET)fd, buf, (int)len, 0, (struct sockaddr *)&addr, sizeof(addr));
+#else
+        return sendto((int)fd, buf, len, 0, (struct sockaddr *)&addr, sizeof(addr));
+#endif
+    }
+
+    static int _z_dns_resolve(const char* host, char* out_buf, size_t out_len) {
+        _z_net_ensure_init();
+        struct addrinfo hints;
+        struct addrinfo *result, *rp;
+        
+        memset(&hints, 0, sizeof(struct addrinfo));
+        hints.ai_family = AF_INET;    // Allow IPv4 
+        hints.ai_socktype = SOCK_STREAM; 
+        hints.ai_flags = 0;
+        hints.ai_protocol = 0;          /* Any protocol */
+
+        int s = getaddrinfo(host, NULL, &hints, &result);
+        if (s != 0) {
+            return s;
+        }
+
+        // Just pick the first one for now
+        int found = 0;
+        for (rp = result; rp != NULL; rp = rp->ai_next) {
+            struct sockaddr_in *ipv4 = (struct sockaddr_in *)rp->ai_addr;
+            void *addr = &(ipv4->sin_addr);
+            
+            if (inet_ntop(rp->ai_family, addr, out_buf, out_len) != NULL) {
+                found = 1;
+                break;
+            }
+        }
+
+        freeaddrinfo(result);
+        return found ? 0 : -1;
+    }
+}

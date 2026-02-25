@@ -1,0 +1,270 @@
+
+import "./core.zc"
+import "./option.zc"
+import "./mem.zc"
+
+// Pure Zen-C string hash using FNV-1a algorithm
+fn _map_hash_str(str: const char*) -> usize {
+    let hash = __zen_hash_seed;
+    let i: usize = 0;
+    
+    while (str[i] != 0) {
+        // Cast char to U8 for unsigned byte value
+        let b: U8 = (U8)str[i];
+        hash = hash ^ (usize)b;
+        hash = hash * (usize)1099511628211;
+        i = i + 1;
+    }
+    
+    return hash;
+}
+
+struct Map<V> {
+    keys: char**;
+    vals: V*;
+    occupied: bool*;  
+    deleted: bool*;
+    len: usize;
+    cap: usize;
+}
+
+struct MapEntry<V> {
+    key: char*;
+    val: V;
+}
+
+struct MapIter<V> {
+    keys: char**;
+    vals: V*;
+    occupied: bool*;
+    deleted: bool*;
+    cap: usize;
+    idx: usize;
+}
+
+struct MapIterResult<V> {
+    entry: MapEntry<V>;
+    has_val: bool;
+}
+
+impl MapIterResult<V> {
+    fn is_none(self) -> bool {
+        return !self.has_val;
+    }
+    
+    fn unwrap(self) -> MapEntry<V> {
+        if (!self.has_val) {
+             !"Panic: Map iterator unwrap on None";
+             exit(1);
+        }
+        return self.entry;
+    }
+}
+
+impl MapIter<V> {
+    fn next(self) -> MapIterResult<V> {
+        while self.idx < self.cap {
+            let i = self.idx;
+            self.idx = self.idx + 1;
+            
+            if (self.occupied[i] && !self.deleted[i]) {
+                let entry = MapEntry<V> {
+                    key: self.keys[i],
+                    val: self.vals[i]
+                };
+                return MapIterResult<V> {
+                    entry: entry,
+                    has_val: true
+                };
+            }
+        }
+        // Empty entry for None
+        let empty = MapEntry<V> { key: 0, val: self.vals[0] }; // Should be 0-init if possible
+        return MapIterResult<V> { entry: empty, has_val: false };
+    }
+}
+
+impl Map<V> {
+    fn new() -> Map<V> {
+        return Map<V> { keys: 0, vals: 0, occupied: 0, deleted: 0, len: 0, cap: 0 };
+    }
+
+    fn _resize(self, new_cap: usize) {
+        let old_keys = self.keys;
+        let old_vals = self.vals;
+        let old_occupied = self.occupied;
+        let old_deleted = self.deleted;
+        let old_cap = self.cap;
+
+        self.cap = new_cap;
+        self.keys = calloc(new_cap, sizeof(char*));
+        self.vals = calloc(new_cap, sizeof(V));
+        self.occupied = calloc(new_cap, sizeof(bool));
+        self.deleted = calloc(new_cap, sizeof(bool));
+        self.len = 0;
+
+        for (let i: usize = 0; i < old_cap; i = i + 1) {
+            if (old_occupied[i] && !old_deleted[i]) {
+                self.put(old_keys[i], old_vals[i]);
+            }
+        }
+        
+        // Free old arrays (use explicit braces to avoid parser bug)
+        if (old_keys != NULL) { free(old_keys); }
+        if (old_vals != NULL) { free(old_vals); }
+        if (old_occupied != NULL) { free(old_occupied); }
+        if (old_deleted != NULL) { free(old_deleted); }
+    }
+
+    fn put(self, key: char*, val: V) {
+        if (self.len >= self.cap * 0.75) {
+            let new_cap = self.cap * 2;
+            if (new_cap < 8) new_cap = 8;
+            self._resize(new_cap);
+        }
+
+        let hash = _map_hash_str(key);
+        let idx = hash % self.cap;
+
+        while (true) {
+            if (!self.occupied[idx] || (self.occupied[idx] && !self.deleted[idx] && strcmp(self.keys[idx], key) == 0)) {
+                if (!self.occupied[idx]) self.len = self.len + 1;
+                
+                if (!self.occupied[idx] || self.deleted[idx]) {
+                    self.keys[idx] = strdup(key);
+                }
+                
+                self.vals[idx] = val;
+                self.occupied[idx] = true;
+                self.deleted[idx] = false;
+                return;
+            }
+            
+            idx = (idx + 1) % self.cap;
+        }
+    }
+
+    fn get(self, key: char*) -> Option<V> {
+        if (self.cap == 0) {
+            return Option<V>::None();
+        }
+
+        let hash = _map_hash_str(key);
+        let idx = hash % self.cap;
+        let start_idx = idx;
+
+        while (true) {
+            if (!self.occupied[idx]) {
+                return Option<V>::None();
+            }
+            
+            if (!self.deleted[idx] && strcmp(self.keys[idx], key) == 0) {
+                return Option<V>::Some(self.vals[idx]);
+            }
+
+            idx = (idx + 1) % self.cap;
+            if (idx == start_idx) {
+                return Option<V>::None();
+            }
+        }
+    }
+    
+    fn contains(self, key: char*) -> bool {
+        let opt: Option<V> = self.get(key);
+        return opt.is_some();
+    }
+    
+    fn remove(self, key: char*) {
+        if (self.cap == 0) return;
+        
+        let hash = _map_hash_str(key);
+        let idx = hash % self.cap;
+        
+        while (true) {
+            if (!self.occupied[idx]) return;
+            
+            if (!self.deleted[idx] && strcmp(self.keys[idx], key) == 0) {
+                 self.deleted[idx] = true;
+                 self.len = self.len - 1;
+                 free(self.keys[idx]);
+                 return;
+            }
+            
+            idx = (idx + 1) % self.cap;
+        }
+    }
+    
+    fn length(self) -> usize {
+        return self.len;
+    }
+    
+    fn is_empty(self) -> bool {
+        return self.len == 0;
+    }
+    
+    fn free(self) {
+        if (self.keys) {
+            for (let i: usize = 0; i < self.cap; i = i + 1) {
+                if (self.occupied[i] && !self.deleted[i]) {
+                    free(self.keys[i]);
+                }
+            }
+            free(self.keys);
+            free(self.vals);
+            free(self.occupied);
+            free(self.deleted);
+        }
+        self.keys = 0;
+        self.vals = 0;
+        self.occupied = 0;
+        self.deleted = 0;
+        self.len = 0;
+        self.cap = 0;
+    }
+    
+    fn capacity(self) -> usize {
+        return self.cap;
+    }
+    
+    fn is_slot_occupied(self, idx: usize) -> bool {
+        if (idx >= self.cap) return false;
+        return self.occupied[idx] && !self.deleted[idx];
+    }
+    
+    fn key_at(self, idx: usize) -> char* {
+        if (idx >= self.cap || !self.occupied[idx] || self.deleted[idx]) {
+            return NULL;
+        }
+        return self.keys[idx];
+    }
+    
+    fn val_at(self, idx: usize) -> V {
+        return self.vals[idx];
+    }
+
+    fn forget(self) {
+        self.keys = 0;
+        self.vals = 0;
+        self.occupied = 0;
+        self.deleted = 0;
+        self.len = 0;
+        self.cap = 0;
+    }
+
+    fn iterator(self) -> MapIter<V> {
+        return MapIter<V> {
+            keys: self.keys,
+            vals: self.vals,
+            occupied: self.occupied,
+            deleted: self.deleted,
+            cap: self.cap,
+            idx: 0
+        };
+    }
+}
+
+impl Drop for Map<V> {
+    fn drop(self) {
+        self.free();
+    }
+}

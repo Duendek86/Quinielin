@@ -1,10 +1,23 @@
-import "std/core.zc"
-import "std/net.zc"
-import "std/fs.zc"
+import "libs/std.zc"
+import "src/net.zc"
 
-fn download_season_data(url: *char, destination: *char) -> bool {
+fn download_season_data(url: char*, destination: char*) -> bool {
+    if (File::exists(destination)) {
+        printf("Fichero ya existe, saltando: %s\n", destination);
+        return true;
+    }
+
     printf("Descargando: %s -> %s\n", url, destination);
-    // Simulación de descarga (requiere implementación real de std/net)
+    
+    let cmd: char[512];
+    sprintf(cmd, "powershell -Command \"Invoke-WebRequest -Uri '%s' -OutFile '%s'\"", url, destination);
+    
+    let result = system(cmd);
+    if (result != 0) {
+        printf("Error descargando %s (codigo: %d)\n", url, result);
+        return false;
+    }
+    
     return true;
 }
 
@@ -14,15 +27,21 @@ fn download_all_data() -> bool {
     // Lista de temporadas (ejemplos)
     let seasons = [
         "9394", "9495", "9596", "9697", "9798", "9899", "9900",
-        "0001", "0102", "0203", "0304", "0405", "0506", "0607",
-        "2324", "2425"
+        "0001", "0102", "0203", "0304", "0405", "0506", "0607", "0708", "0809", "0910",
+        "1011", "1112", "1213", "1314", "1415", "1516", "1617", "1718", "1819", "1920",
+        "2122", "2223", "2324", "2425", "2526"
     ];
     
-    for (let i = 0; i < 16; i++) {
-        let url_buf = [char; 256];
-        let file_buf = [char; 256];
-        sprintf(url_buf, "https://datahub.io/core/spanish-la-liga/_r/-/season-%s.csv", seasons[i]);
-        sprintf(file_buf, "data/season-%s.csv", seasons[i]);
+    for (let i = 0; i < 32; i++) {
+        let url_buf: char[256];
+        let file_buf: char[256];
+        // Primera División (SP1)
+        sprintf(url_buf, "https://www.football-data.co.uk/mmz4281/%s/SP1.csv", seasons[i]);
+        sprintf(file_buf, "data/season-%s-SP1.csv", seasons[i]);
+        download_season_data(url_buf, file_buf);
+        // Segunda División (SP2)
+        sprintf(url_buf, "https://www.football-data.co.uk/mmz4281/%s/SP2.csv", seasons[i]);
+        sprintf(file_buf, "data/season-%s-SP2.csv", seasons[i]);
         download_season_data(url_buf, file_buf);
     }
     
